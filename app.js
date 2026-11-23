@@ -47,78 +47,131 @@
   /* =====================================================
      SCAN: pick photo -> crop -> OCR
   ===================================================== */
-  let scanCropper = null, scanFileObj = null;
-
-  function mountCropper(imgEl, wrapEl, file, existing) {
-    if (existing) existing.destroy();
-    imgEl.src = URL.createObjectURL(file);
-    wrapEl.hidden = false;
-    return new Promise(res => {
-      imgEl.onload = () => res(new Cropper(imgEl, { viewMode: 1, autoCropArea: 0.92, background: false, responsive: true }));
-    });
+  let qc = null, scanBusy = false, ocrWorker = null;
+  const anim = { cur: 0, tgt: 0, raf: 0 };
+  function setBar(barEl, pct) {           // eased, always-moving progress
+    anim.tgt = Math.max(anim.tgt, pct);
+    if (anim.raf) return;
+    const tick = () => {
+      anim.cur += (anim.tgt - anim.cur) * 0.14 + 0.05;
+      if (anim.cur > anim.tgt) anim.cur = anim.tgt;
+      barEl.style.width = anim.cur.toFixed(1) + "%";
+      anim.raf = Math.abs(anim.tgt - anim.cur) > 0.1 || scanBusy ? requestAnimationFrame(tick) : 0;
+    };
+    anim.raf = requestAnimationFrame(tick);
   }
 
   $("scanFile").addEventListener("change", async e => {
     const f = e.target.files[0]; if (!f) return;
-    scanFileObj = f;
-    scanCropper = await mountCropper($("scanImg"), $("scanCropWrap"), f, scanCropper);
-    $("scanCropBtn").disabled = false; $("scanRunBtn").disabled = false;
-    toast("Drag the box around the ingredients, then tap Read text");
+    if (!qc) qc = new LLCrop.QuadCrop($("scanCanvas"));
+    $("scanCropWrap").hidden = false; $("scanTools").hidden = false; $("scanPrevWrap").hidden = true;
+    try { await qc.load(f); } catch (err) { return toast("Could not open that image"); }
+    $("scanRunBtn").disabled = false;
+    toast("Drag the green corners onto the ingredient list");
+  });
+  $("scanRotL").addEventListener("click", () => qc && qc.rotate(-1));
+  $("scanRotR").addEventListener("click", () => qc && qc.rotate(1));
+  $("scanReset").addEventListener("click", () => qc && qc.resetQuad());
+  $("scanTilt").addEventListener("input", e => { $("scanTiltV").textContent = e.target.value + "°"; qc && qc.setTilt(e.target.value); });
+  $("scanBoost").addEventListener("input", e => { $("scanBoostV").textContent = e.target.value; });
+  const scanOpts = () => ({ filter: $("scanFilter").value, boost: +$("scanBoost").value });
+  $("scanPreview").addEventListener("click", () => {
+    if (!qc || !qc.src) return;
+    const c = qc.crop(scanOpts()), sm = document.createElement("canvas"), k = Math.min(1, 900 / c.width);
+    sm.width = Math.round(c.width * k); sm.height = Math.round(c.height * k); sm.getContext("2d").drawImage(c, 0, 0, sm.width, sm.height);
+    $("scanPrevImg").src = sm.toDataURL("image/jpeg", 0.8); $("scanPrevWrap").hidden = false;
   });
 
-  $("scanCropBtn").addEventListener("click", async () => {
-    if (!scanCropper) return;
-    const canvas = scanCropper.getCroppedCanvas({ maxWidth: 2400, maxHeight: 2400 });
-    const blob = await canvasToBlob(canvas, "image/jpeg", 0.92);
-    scanFileObj = new File([blob], "crop.jpg", { type: "image/jpeg" });
-    scanCropper = await mountCropper($("scanImg"), $("scanCropWrap"), scanFileObj, scanCropper);
-    toast("Cropped");
-  });
+  /* vocabulary correction: snap near-miss words to known ingredient words (Levenshtein, conservative) */
+  let vocab = null;
+  function buildVocab() {
+    const set = new Set();
+    const add = t => String(t || "").toLowerCase().split(/[^a-z0-9]+/).forEach(w => { if (w.length >= 5) set.add(w); });
+    (window.INGREDIENT_DB || []).forEach(e => { add(e.name); (e.match || []).forEach(add); });
+    "ingredients contains flavor flavors natural artificial preservative preservatives vitamin enriched flour sugar water salt oil palm soybean cornstarch syrup extract powder starch protein concentrate lecithin citric ascorbic acid sodium potassium calcium phosphate sulfate carbonate hydroxide monoglycerides diglycerides distilled vinegar seasoning spices modified wheat niacin riboflavin thiamine folic cellulose gluten dextrose maltodextrin glycerin".split(" ").forEach(add);
+    return [...set];
+  }
+  function lev(a, b, max) {
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i]; let rowMin = i;
+      for (let j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        if (cur[j] < rowMin) rowMin = cur[j];
+      }
+      if (rowMin > max) return max + 1; prev = cur;
+    }
+    return prev[b.length];
+  }
+  function correctWords(text) {
+    if (!vocab) vocab = buildVocab();
+    const known = new Set(vocab);
+    return text.replace(/[A-Za-z]{5,}/g, w => {
+      const lw = w.toLowerCase(); if (known.has(lw)) return w;
+      const max = lw.length >= 9 ? 2 : 1; let best = null, bd = max + 1, tie = false;
+      for (const v of vocab) { const d = lev(lw, v, max); if (d < bd) { bd = d; best = v; tie = false; } else if (d === bd && d <= max) tie = true; }
+      if (!best || tie || bd > max) return w;
+      return w[0] === w[0].toUpperCase() ? best[0].toUpperCase() + best.slice(1) : best;
+    });
+  }
 
-  function prepForOCR(canvas) {
-    // upscale small crops + grayscale + contrast for better OCR
-    const scale = canvas.width < 1400 ? 1400 / canvas.width : 1;
-    const out = document.createElement("canvas");
-    out.width = Math.round(canvas.width * scale); out.height = Math.round(canvas.height * scale);
-    const ctx = out.getContext("2d");
-    ctx.filter = "grayscale(1) contrast(1.35)";
-    ctx.drawImage(canvas, 0, 0, out.width, out.height);
-    return out;
+  async function getWorker(st) {
+    if (ocrWorker) return ocrWorker;
+    ocrWorker = await Tesseract.createWorker("eng", 1, {
+      logger: m => {
+        if (m.status) st.textContent = m.status.replace(/_/g, " ");
+        if (typeof m.progress === "number" && ocrWorker !== null && m.status === "recognizing text") setBar($("scanBar"), 20 + m.progress * (anim.span || 60));
+      }
+    });
+    await ocrWorker.setParameters({ preserve_interword_spaces: "1", user_defined_dpi: "300" });
+    return ocrWorker;
   }
 
   $("scanRunBtn").addEventListener("click", async () => {
-    if (!scanCropper) return;
-    if (!window.Tesseract) return toast("OCR engine failed to load. Check your connection.");
-    const btn = $("scanRunBtn"); btn.disabled = true;
+    if (!qc || !qc.src || scanBusy) return;
+    if (!window.Tesseract) return toast("OCR engine is still loading. Try again in a moment.");
+    scanBusy = true; const btn = $("scanRunBtn"); btn.disabled = true;
     const prog = $("scanProgress"), bar = $("scanBar"), st = $("scanStatus");
-    prog.hidden = false; bar.style.width = "3%"; st.textContent = "Preparing image…";
+    anim.cur = 0; anim.tgt = 0; anim.span = 60; prog.hidden = false; prog.classList.add("scanning"); bar.style.width = "0%";
+    st.textContent = "Flattening the label…"; setBar(bar, 8);
     try {
-      const raw = scanCropper.getCroppedCanvas({ maxWidth: 2400, maxHeight: 2400 });
-      const canvas = prepForOCR(raw);
-      const { data } = await Tesseract.recognize(canvas, "eng", {
-        logger: m => {
-          if (m.status) st.textContent = m.status.replace(/_/g, " ");
-          if (typeof m.progress === "number") bar.style.width = Math.max(3, Math.round(m.progress * 100)) + "%";
-        }
-      });
-      const text = cleanOCR(data.text);
+      await new Promise(r => setTimeout(r, 30));
+      const o = scanOpts();
+      const passes = [{ ...o, tag: "main" }];
+      if (o.filter !== "adaptive") passes.push({ ...o, filter: "adaptive", tag: "alt" });
+      let best = null;
+      for (let i = 0; i < passes.length; i++) {
+        anim.span = 60 / passes.length; anim.tgt = Math.max(anim.tgt, 15 + i * 40); setBar(bar, 15 + i * 40);
+        st.textContent = i ? "Second look with different contrast…" : "Loading reader…";
+        const canvas = qc.crop(passes[i]);
+        const w = await getWorker(st);
+        const { data } = await w.recognize(canvas);
+        const score = (data.confidence || 0) + Math.min(20, (data.text || "").length / 40);
+        if (!best || score > best.score) best = { score, data };
+        if (data.confidence >= 88) break;
+      }
+      st.textContent = "Tidying words…"; setBar(bar, 96);
+      const text = correctWords(cleanOCR(best.data.text));
       $("ingText").value = text;
-      toast(text ? "Text read. Check it, then Analyze" : "No text found. Try a tighter crop.");
+      setBar(bar, 100);
+      toast(text ? "Text read (" + Math.round(best.data.confidence) + "% sure). Check it, then Analyze" : "No text found. Move the corners tighter or try Preview.");
       $("ingText").scrollIntoView({ behavior: "smooth", block: "center" });
     } catch (err) {
       console.error(err); toast("Could not read the image");
     } finally {
-      btn.disabled = false; setTimeout(() => (prog.hidden = true), 800);
+      scanBusy = false; btn.disabled = false; prog.classList.remove("scanning"); setTimeout(() => { prog.hidden = true; bar.style.width = "0%"; }, 900);
     }
   });
 
   function cleanOCR(t) {
     return (t || "")
-      .replace(/-\n(?=[a-z])/g, "")     // hyphenated line breaks
+      .replace(/-\n(?=[a-z])/g, "")
       .replace(/\n+/g, " ")
       .replace(/[|_~`]+/g, " ")
       .replace(/\s{2,}/g, " ")
       .replace(/\s+,/g, ",")
+      .replace(/(\d)\s*[Oo]\s*%/g, "$10%")
       .trim();
   }
 
@@ -236,50 +289,38 @@
   /* =====================================================
      PHOTO STUDIO: crop -> remove background
   ===================================================== */
-  let studioCropper = null, studioBlob = null, studioFileObj = null;
-
+  let studioQC = null, cut = null, studioBlob = null;
   $("studioFile").addEventListener("change", async e => {
     const f = e.target.files[0]; if (!f) return;
-    studioFileObj = f; studioBlob = null;
-    $("studioOut").hidden = true; $("studioActions").hidden = true;
-    studioCropper = await mountCropper($("studioImg"), $("studioCropWrap"), f, studioCropper);
-    $("studioCropBtn").disabled = false; $("studioBgBtn").disabled = false;
+    if (!studioQC) studioQC = new LLCrop.QuadCrop($("studioCanvas"));
+    studioBlob = null; $("studioActions").hidden = true; $("cutTools").hidden = true;
+    $("studioCropWrap").hidden = false;
+    try { await studioQC.load(f); } catch { return toast("Could not open that image"); }
+    $("studioCropBtn").disabled = false;
   });
-
-  $("studioCropBtn").addEventListener("click", async () => {
-    if (!studioCropper) return;
-    const canvas = studioCropper.getCroppedCanvas({ maxWidth: 1600, maxHeight: 1600 });
-    const blob = await canvasToBlob(canvas, "image/png");
-    studioFileObj = new File([blob], "crop.png", { type: "image/png" });
-    studioCropper = await mountCropper($("studioImg"), $("studioCropWrap"), studioFileObj, studioCropper);
-    toast("Cropped");
-  });
-
-  let bgLib = null;
-  $("studioBgBtn").addEventListener("click", async () => {
-    if (!studioCropper) return;
-    const btn = $("studioBgBtn"); btn.disabled = true;
-    const prog = $("studioProgress"), bar = $("studioBar"), st = $("studioStatus");
-    prog.hidden = false; bar.style.width = "3%"; st.textContent = "Loading AI model…";
-    try {
-      if (!bgLib) bgLib = await import("https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/+esm");
-      const src = await canvasToBlob(studioCropper.getCroppedCanvas({ maxWidth: 1600, maxHeight: 1600 }), "image/png");
-      studioBlob = await bgLib.removeBackground(src, {
-        output: { format: "image/png" },
-        progress: (key, cur, total) => {
-          if (total) bar.style.width = Math.max(3, Math.round((cur / total) * 100)) + "%";
-          st.textContent = key.startsWith("fetch") ? "Downloading model (first time only)…" : "Cutting out background…";
-        }
-      });
-      $("studioResult").src = URL.createObjectURL(studioBlob);
-      $("studioOut").hidden = false; $("studioActions").hidden = false;
-      toast("Background removed ✨");
-    } catch (err) {
-      console.error(err); toast("Background removal failed. Check your connection and try again.");
-    } finally {
-      btn.disabled = false; setTimeout(() => (prog.hidden = true), 800);
+  $("studioCropBtn").addEventListener("click", () => {
+    if (!studioQC || !studioQC.src) return;
+    if (!cut) {
+      cut = new LLCutout($("cutCanvas"));
+      document.querySelectorAll("[data-cm]").forEach(b => b.addEventListener("click", () => {
+        cut.mode = b.dataset.cm; document.querySelectorAll("[data-cm]").forEach(x => x.classList.toggle("primary", x === b));
+      }));
+      $("cutTol").addEventListener("input", e => { cut.tol = +e.target.value; $("cutTolV").textContent = e.target.value; });
+      $("cutSize").addEventListener("input", e => { cut.size = +e.target.value; $("cutSizeV").textContent = e.target.value; });
+      $("cutAuto").addEventListener("click", () => { cut.autoEdges(); publishCut(); });
+      $("cutUndo").addEventListener("click", () => { cut.undo() || toast("Nothing to undo"); publishCut(); });
+      $("cutReset").addEventListener("click", () => { cut.reset(); publishCut(); });
+      $("cutCanvas").addEventListener("pointerup", publishCut);
     }
+    cut.load(studioQC.crop({ filter: "original", minLong: 0, maxDim: 1600 }));
+    $("cutTools").hidden = false; publishCut();
+    toast("Tap the background with the wand, or paint to erase");
   });
+  async function publishCut() {
+    if (!cut || !cut.orig) return;
+    studioBlob = await canvasToBlob(cut.trim(), "image/png");
+    $("studioActions").hidden = false;
+  }
 
   $("studioUseBtn").addEventListener("click", () => {
     currentPhoto = studioBlob;

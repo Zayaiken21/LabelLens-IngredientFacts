@@ -6,8 +6,11 @@
 <meta name="theme-color" content="#0f1b2d">
 <title>LabelLens — Scan. Know. Save.</title>
 <meta name="description" content="Scan the back of any product, see what is really inside with red, yellow and green ingredient colors, and save it for later.">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
 <link rel="stylesheet" href="styles.css">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<meta name="theme-color" content="#0b1626">
 </head>
 <body>
 
@@ -29,6 +32,7 @@
   <button class="tab" data-tab="studio" role="tab">✂️<br>Photo</button>
   <button class="tab" data-tab="library" role="tab">⭐<br>Saved <span id="savedCount" class="badge">0</span></button>
   <button class="tab" data-tab="learn" role="tab">📚<br>Learn</button>
+  <button class="tab" data-tab="facts" role="tab">⚖️<br>Facts</button>
   <button class="tab" data-tab="track" role="tab">🥗<br>Track</button>
   <button class="tab" data-tab="change" role="tab">🔥<br>Change</button>
 </nav>
@@ -44,10 +48,26 @@
         <label class="btn primary">📸 Take / choose photo
           <input type="file" id="scanFile" accept="image/*" capture="environment" hidden>
         </label>
-        <button class="btn" id="scanCropBtn" disabled>Crop to ingredients</button>
-        <button class="btn" id="scanRunBtn" disabled>Read text</button>
+        <button class="btn" id="scanRunBtn" disabled>🔍 Read text</button>
       </div>
-      <div id="scanCropWrap" class="cropwrap" hidden><img id="scanImg" alt="Label photo"></div>
+      <div id="scanCropWrap" class="cropwrap" hidden>
+        <canvas id="scanCanvas"></canvas>
+      </div>
+      <div id="scanTools" class="tools" hidden>
+        <p class="muted small">Drag any of the 4 corners to fit the label. Drag inside to move the box. Corners work on slanted or curved photos too.</p>
+        <div class="row">
+          <button class="btn" id="scanRotL" aria-label="Rotate left">⟲</button>
+          <button class="btn" id="scanRotR" aria-label="Rotate right">⟳</button>
+          <button class="btn" id="scanReset">Reset box</button>
+          <button class="btn" id="scanPreview">👁 Preview</button>
+        </div>
+        <label class="slider">Straighten <input type="range" id="scanTilt" min="-15" max="15" step="0.5" value="0"><b id="scanTiltV">0°</b></label>
+        <label class="slider">Boost <input type="range" id="scanBoost" min="0" max="100" step="5" value="0"><b id="scanBoostV">0</b></label>
+        <label class="slider">Filter
+          <select id="scanFilter"><option value="auto">Auto (best for most)</option><option value="adaptive">Shiny / uneven light</option><option value="original">Original colors</option><option value="invert">Invert (light on dark)</option></select>
+        </label>
+        <div id="scanPrevWrap" class="checker" hidden><img id="scanPrevImg" alt="What the scanner will read"></div>
+      </div>
       <div id="scanProgress" class="progress" hidden><div id="scanBar"></div><span id="scanStatus">Starting…</span></div>
     </div>
 
@@ -111,22 +131,53 @@
   <section id="tab-studio" class="panel">
     <div class="card">
       <h2>Product photo studio</h2>
-      <p class="muted">Crop the product, then cut out the background to get a clean transparent PNG.</p>
+      <p class="muted">Crop the product with the 4 corners, then cut out the background yourself: tap the background with the wand, or paint with the eraser. No AI, all on your device.</p>
       <div class="row">
         <label class="btn primary">🖼 Choose product photo
           <input type="file" id="studioFile" accept="image/*" hidden>
         </label>
-        <button class="btn" id="studioCropBtn" disabled>Apply crop</button>
-        <button class="btn" id="studioBgBtn" disabled>✨ Remove background</button>
+        <button class="btn" id="studioCropBtn" disabled>✂ Apply crop</button>
       </div>
-      <div id="studioCropWrap" class="cropwrap" hidden><img id="studioImg" alt="Product photo"></div>
-      <div id="studioProgress" class="progress" hidden><div id="studioBar"></div><span id="studioStatus">Working…</span></div>
-      <div id="studioOut" class="checker" hidden><img id="studioResult" alt="Result"></div>
+      <div id="studioCropWrap" class="cropwrap" hidden><canvas id="studioCanvas"></canvas></div>
+      <div id="cutTools" class="tools" hidden>
+        <div class="row">
+          <button class="btn primary" data-cm="wand">🪄 Wand</button>
+          <button class="btn" data-cm="erase">🧽 Erase</button>
+          <button class="btn" data-cm="restore">🖌 Restore</button>
+          <button class="btn" id="cutAuto">Auto edges</button>
+          <button class="btn" id="cutUndo">↶ Undo</button>
+          <button class="btn" id="cutReset">Reset</button>
+        </div>
+        <label class="slider">Wand strength <input type="range" id="cutTol" min="5" max="90" value="32"><b id="cutTolV">32</b></label>
+        <label class="slider">Brush size <input type="range" id="cutSize" min="6" max="70" value="24"><b id="cutSizeV">24</b></label>
+        <div class="checker"><canvas id="cutCanvas" style="max-width:100%;max-height:420px"></canvas></div>
+      </div>
       <div class="row" id="studioActions" hidden>
         <button class="btn primary" id="studioUseBtn">Use for current item</button>
         <button class="btn" id="studioDownloadBtn">⬇ Download PNG</button>
       </div>
-      <p class="muted small">The first background removal downloads an AI model (~40 MB). After that it is cached and fast.</p>
+    </div>
+  </section>
+
+  <!-- FACTS -->
+  <section id="tab-facts" class="panel">
+    <div class="card">
+      <h2>Facts, laws and the evidence</h2>
+      <p class="muted">What people claim about food ingredients, what the evidence says, how laws changed over time, and where to read the original. Check your own blood levels and talk to a clinician before changing doses.</p>
+      <div class="seg fxnav">
+        <button class="on" data-fx="claims">Claims</button><button data-fx="laws">Law history</button><button data-fx="enzymes">Enzymes</button>
+        <button data-fx="fluoride">Fluoride</button><button data-fx="body">Body &amp; labs</button><button data-fx="herbs">Herbs &amp; healing</button><button data-fx="sources">Sources</button>
+      </div>
+    </div>
+    <div class="card">
+      <div id="fx-claims" class="fxseg"><input id="fxSearch" type="search" placeholder="Search claims (aspartame, dye, seed oil…)"><div id="fxClaims"></div></div>
+      <div id="fx-laws" class="fxseg" hidden><div id="fxLaws"></div></div>
+      <div id="fx-enzymes" class="fxseg" hidden><div id="fxEnzymes"></div></div>
+      <div id="fx-fluoride" class="fxseg" hidden><div id="fxFluoride"></div></div>
+      <div id="fx-body" class="fxseg" hidden><div id="fxBody"></div></div>
+      <div id="fx-herbs" class="fxseg" hidden><div id="fxHerbs"></div></div>
+      <div id="fx-sources" class="fxseg" hidden><div id="fxSources"></div></div>
+      <p class="muted small" id="fxDisc"></p>
     </div>
   </section>
 
@@ -406,13 +457,17 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="crop.js"></script>
+<script src="cutout.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="ingredients.js"></script>
 <script src="ingredients-extra.js"></script>
 <script src="education.js"></script>
 <script src="app.js"></script>
 <script src="tracker.js"></script>
 <script src="journey.js"></script>
+<script src="facts-data.js"></script>
+<script src="facts.js"></script>
+<script>if("serviceWorker"in navigator&&location.protocol.startsWith("http"))addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}))</script>
 </body>
 </html>
