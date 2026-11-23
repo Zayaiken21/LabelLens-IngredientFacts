@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1b2d">
+<title>LabelLens — Scan. Know. Save.</title>
+<meta name="description" content="Scan the back of any product, see what is really inside with red, yellow and green ingredient colors, and save it for later.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">
+      <svg viewBox="0 0 48 48" width="34" height="34"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3a6"/><stop offset="1" stop-color="#6366f1"/></linearGradient></defs><circle cx="21" cy="21" r="13" fill="none" stroke="url(#g)" stroke-width="5"/><path d="M31 31l11 11" stroke="url(#g)" stroke-width="5" stroke-linecap="round"/><path d="M15 21l4 4 8-9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </span>
+    <div>
+      <h1>LabelLens</h1>
+      <p class="tag">Scan. Know. Save.</p>
+    </div>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button class="tab active" data-tab="scan" role="tab">📷<br>Scan</button>
+  <button class="tab" data-tab="results" role="tab">🔍<br>Results</button>
+  <button class="tab" data-tab="studio" role="tab">✂️<br>Photo</button>
+  <button class="tab" data-tab="library" role="tab">⭐<br>Saved <span id="savedCount" class="badge">0</span></button>
+  <button class="tab" data-tab="learn" role="tab">📚<br>Learn</button>
+</nav>
+
+<main>
+
+  <!-- SCAN -->
+  <section id="tab-scan" class="panel active">
+    <div class="card">
+      <h2>Scan an ingredient label</h2>
+      <p class="muted">Take or upload a photo of the back of the package. The text is read right on your device, nothing is uploaded.</p>
+      <div class="row">
+        <label class="btn primary">📸 Take / choose photo
+          <input type="file" id="scanFile" accept="image/*" capture="environment" hidden>
+        </label>
+        <button class="btn" id="scanCropBtn" disabled>Crop to ingredients</button>
+        <button class="btn" id="scanRunBtn" disabled>Read text</button>
+      </div>
+      <div id="scanCropWrap" class="cropwrap" hidden><img id="scanImg" alt="Label photo"></div>
+      <div id="scanProgress" class="progress" hidden><div id="scanBar"></div><span id="scanStatus">Starting…</span></div>
+    </div>
+
+    <div class="card">
+      <h2>Ingredients text</h2>
+      <p class="muted">Scanned text lands here. Fix any typos, or just paste a list yourself.</p>
+      <textarea id="ingText" rows="6" placeholder="Paste or scan ingredients, e.g. Enriched flour, sugar, palm oil, red 40, natural flavors…"></textarea>
+      <div class="row">
+        <button class="btn primary" id="analyzeBtn">Analyze ingredients</button>
+        <button class="btn" id="pasteBtn">📋 Paste</button>
+        <button class="btn ghost" id="clearBtn">Clear</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="tab-results" class="panel">
+    <div id="emptyResults" class="card center muted">Analyze some ingredients first and the breakdown shows up here.</div>
+    <div id="resultsBody" hidden>
+      <div class="card scorecard">
+        <div class="ring" id="scoreRing"><span id="scoreNum">–</span></div>
+        <div>
+          <h2 id="scoreLabel">Score</h2>
+          <p class="muted" id="scoreSub"></p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Your label, color coded</h2>
+        <p class="muted small"><span class="key red">Red</span> avoid <span class="key yellow">Yellow</span> caution <span class="key green">Green</span> good <span class="key plain">Gray</span> not listed</p>
+        <div id="highlightBox" class="highlight"></div>
+      </div>
+
+      <div class="filters">
+        <button class="filter red active" data-f="red">🔴 Avoid <b id="redN">0</b></button>
+        <button class="filter yellow" data-f="yellow">🟡 Caution <b id="yellowN">0</b></button>
+        <button class="filter green" data-f="good">🟢 Good <b id="goodN">0</b></button>
+        <button class="filter" data-f="all">All <b id="allN">0</b></button>
+      </div>
+      <p class="muted small">Tap any ingredient to see why, and how regulators around the world see it.</p>
+      <div id="chipList" class="chips"></div>
+
+      <details class="card" id="otherBox">
+        <summary>Other ingredients (<span id="otherN">0</span>)</summary>
+        <div id="otherList" class="muted"></div>
+      </details>
+
+      <div class="card">
+        <h2>Save this item</h2>
+        <input id="itemName" type="text" placeholder="Product name (e.g. Honey Nut Cereal)">
+        <div class="row">
+          <button class="btn primary" id="saveBtn">⭐ Save to my library</button>
+          <button class="btn" id="photoGoBtn">Add a product photo</button>
+        </div>
+        <div id="saveHint" class="muted small"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PHOTO STUDIO -->
+  <section id="tab-studio" class="panel">
+    <div class="card">
+      <h2>Product photo studio</h2>
+      <p class="muted">Crop the product, then cut out the background to get a clean transparent PNG.</p>
+      <div class="row">
+        <label class="btn primary">🖼 Choose product photo
+          <input type="file" id="studioFile" accept="image/*" hidden>
+        </label>
+        <button class="btn" id="studioCropBtn" disabled>Apply crop</button>
+        <button class="btn" id="studioBgBtn" disabled>✨ Remove background</button>
+      </div>
+      <div id="studioCropWrap" class="cropwrap" hidden><img id="studioImg" alt="Product photo"></div>
+      <div id="studioProgress" class="progress" hidden><div id="studioBar"></div><span id="studioStatus">Working…</span></div>
+      <div id="studioOut" class="checker" hidden><img id="studioResult" alt="Result"></div>
+      <div class="row" id="studioActions" hidden>
+        <button class="btn primary" id="studioUseBtn">Use for current item</button>
+        <button class="btn" id="studioDownloadBtn">⬇ Download PNG</button>
+      </div>
+      <p class="muted small">The first background removal downloads an AI model (~40 MB). After that it is cached and fast.</p>
+    </div>
+  </section>
+
+  <!-- LIBRARY -->
+  <section id="tab-library" class="panel">
+    <div class="card">
+      <input id="searchBox" type="search" placeholder="Search saved items…">
+      <div class="row">
+        <select id="sortBox">
+          <option value="new">Newest</option>
+          <option value="score">Best score</option>
+          <option value="worst">Lowest score</option>
+          <option value="name">Name A–Z</option>
+        </select>
+        <button class="btn ghost" id="exportBtn">Export</button>
+        <label class="btn ghost">Import<input type="file" id="importFile" accept="application/json" hidden></label>
+      </div>
+    </div>
+    <div id="libraryGrid" class="grid"></div>
+    <div id="libraryEmpty" class="card center muted">Nothing saved yet. Scan something and tap ⭐ Save.</div>
+  </section>
+
+  <!-- LEARN -->
+  <section id="tab-learn" class="panel">
+    <div class="seg">
+      <button class="segbtn active" data-seg="glossary">📘 Glossary</button>
+      <button class="segbtn" data-seg="guides">🎓 Food smarts</button>
+    </div>
+
+    <div id="seg-glossary">
+      <div class="card">
+        <h2>Ingredient glossary</h2>
+        <p class="muted small">Every ingredient LabelLens knows, A to Z, with the reason and how health bodies around the world see it.</p>
+        <input id="glossSearch" type="search" placeholder="Search ingredients, E-numbers, foods…">
+        <div class="filters" style="margin-top:10px">
+          <button class="filter active" data-g="all">All <b id="gAll">0</b></button>
+          <button class="filter red" data-g="red">🔴 <b id="gRed">0</b></button>
+          <button class="filter yellow" data-g="yellow">🟡 <b id="gYellow">0</b></button>
+          <button class="filter green" data-g="green">🟢 <b id="gGreen">0</b></button>
+        </div>
+      </div>
+      <div id="glossList"></div>
+      <p id="glossEmpty" class="card center muted" hidden>No matches. Try another name.</p>
+    </div>
+
+    <div id="seg-guides" hidden>
+      <div class="card">
+        <h2>Education center</h2>
+        <p class="muted small">How to read labels, spot bad food and understand why countries disagree. General education, not medical advice.</p>
+      </div>
+      <div id="guideList"></div>
+      <p class="muted small center">Sources: WHO, EFSA, IARC, JECFA, UK Food Standards Agency, Health Canada, US FDA and national dietary guidelines.</p>
+    </div>
+  </section>
+
+</main>
+
+<!-- Reason modal -->
+<div id="modal" class="modal" hidden>
+  <div class="sheet" role="dialog" aria-modal="true">
+    <button class="close" id="modalClose" aria-label="Close">✕</button>
+    <div id="modalTag" class="pill"></div>
+    <h3 id="modalTitle"></h3>
+    <p id="modalReason"></p>
+    <div id="modalWorldBox" class="worldbox" hidden>
+      <b>🌍 Around the world</b>
+      <p id="modalWorld"></p>
+    </div>
+    <p class="muted small" id="modalFound"></p>
+    <div class="row"><button class="btn" id="modalLearn">📘 Open in glossary</button></div>
+    <p class="muted small">General information only, not medical advice.</p>
+  </div>
+</div>
+
+<!-- Item detail modal -->
+<div id="itemModal" class="modal" hidden>
+  <div class="sheet tall" role="dialog" aria-modal="true">
+    <button class="close" id="itemClose" aria-label="Close">✕</button>
+    <div id="itemBody"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="ingredients.js"></script>
+<script src="education.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
