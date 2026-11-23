@@ -73,3 +73,138 @@ window.EDU = [
     "LabelLens is not an allergy checker. Always read the allergen statement on the package."
   ]}
 ];
+
+/* ===================== LIVING vs DEAD FOODS ===================== */
+window.EDU_LIVING = [
+  { icon: "🌱", title: "What 'living food' means (and what it doesn't)", color: "green", points: [
+    "'Living' vs 'dead' food is a wellness idea, not an official scientific category. LabelLens uses it as a simple way to judge how close a food is to how it grew or was traditionally made.",
+    "Living food: fresh, whole and minimally processed, or still biologically active, such as sprouts and live fermented foods.",
+    "Dead (or 'fake') food: stripped, refined, heavily processed or built from isolated ingredients and additives, with little left of the original plant or animal.",
+    "The science behind the idea is real: large studies link diets high in whole, minimally processed foods with better health and diets high in ultra-processed food with worse health.",
+    "The extreme version is not: raw is not always better, and cooking, canning and freezing are not always bad."
+  ]},
+  { icon: "🥬", title: "What makes food 'living'", color: "green", points: [
+    "Fresh produce eaten soon after harvest, when vitamin C and other delicate nutrients are highest.",
+    "Sprouted and soaked grains, beans, nuts and seeds, which are easier to digest for many people.",
+    "Live fermented foods: yogurt and kefir with live cultures, kimchi, sauerkraut, miso, natto, tempeh, kombucha and traditionally made pickles.",
+    "Whole intact foods where the fiber, skin, germ and bran are still there.",
+    "Fresh herbs, raw nuts and seeds, extra virgin olive oil and minimally processed fats.",
+    "Food you can trace back to a plant, animal or simple traditional process."
+  ]},
+  { icon: "🏭", title: "What makes food 'dead' or fake", color: "red", points: [
+    "Refined: white flour, white sugar and polished grains stripped of fiber and nutrients.",
+    "Ultra-processed formulas built from extracted ingredients: protein isolates, modified starches, hydrogenated oils, syrups and additives.",
+    "Artificial colors, flavors, sweeteners and preservatives that exist to imitate or extend food.",
+    "Very long shelf life through additives and heavy processing (some natural foods like honey, salt and dried beans last long too, so check the ingredients, not just the date).",
+    "Packaged as 'food-like products': snack bars, flavored drinks, imitation cheese, instant everything.",
+    "Labels where the first ingredients are sugar, refined flour or refined oil, with a long tail of chemical names."
+  ]},
+  { icon: "✅", title: "The 6-question aliveness test", color: "green", points: [
+    "1. Did it grow, or was it made in a factory?",
+    "2. Could you recognize every ingredient and picture it in a kitchen?",
+    "3. How many steps are there between the field and your plate?",
+    "4. Is the fiber still in it?",
+    "5. Does it spoil? Real fresh food does, but so do plenty of healthy foods in the fridge, so treat this as a clue, not a rule.",
+    "6. Is it mostly one ingredient, or a list of twenty?"
+  ]},
+  { icon: "🔄", title: "Dead-to-living swaps", color: "green", points: [
+    "White bread → sprouted grain, sourdough or 100% whole grain bread.",
+    "Soda or energy drinks → water with citrus or mint, sparkling water with fruit, unsweetened tea.",
+    "Chips → plain popcorn, nuts, olives or vegetables with hummus.",
+    "Sugary cereal or bars → oats with fruit and nuts.",
+    "Flavored yogurt → plain yogurt or kefir with fresh fruit.",
+    "Fruit juice → the whole fruit.",
+    "Margarine and shortening → butter in moderation or olive oil.",
+    "Deli meats with nitrites → home-cooked chicken, eggs, beans or canned fish.",
+    "Candy → dates with nuts, dark chocolate or berries."
+  ]},
+  { icon: "🧪", title: "Myth check", color: "yellow", points: [
+    "'Raw is always better': cooking makes some nutrients easier to absorb (lycopene in tomatoes, carotenoids in carrots) and kills germs. Eat a mix of raw and cooked.",
+    "'Natural means healthy': arsenic and sugar are natural too. Check the ingredient list, not the front of the pack.",
+    "'All processed food is bad': frozen vegetables, canned beans, plain yogurt and tinned fish are processed and healthy. Processing level matters, not just whether something is processed.",
+    "'Fermented food is always safe': it can be very salty and can trouble people sensitive to histamine. Introduce it gradually.",
+    "'Raw sprouts and raw milk are healthier': food-safety agencies warn they can carry harmful bacteria, especially for children, pregnant people, older adults and anyone immunocompromised."
+  ]},
+  { icon: "🌈", title: "Habits that keep your plate alive", color: "green", points: [
+    "Eat the rainbow: different colors bring different plant compounds.",
+    "Aim for variety. Some researchers link eating around 30 different plants a week with a more diverse gut microbiome, though this evidence is observational.",
+    "Cook from scratch more often: even simple meals beat packaged ones.",
+    "Buy in season and shop for ingredients rather than ready-made products.",
+    "Keep a fermented food or two in your fridge.",
+    "Treat packaged food as the exception, not the foundation."
+  ]}
+];
+
+/* ===================== GET HEALTHIER ===================== */
+window.EDU_HEALTH = [
+  { icon: "🧭", title: "Start here", color: "plain", points: [
+    "Check with a doctor or registered dietitian before big diet or exercise changes, especially if you are pregnant, take medication, or have a medical condition.",
+    "Pick one or two changes, not ten. Habits stick when they are small and repeated.",
+    "Add before you subtract: add vegetables, water and protein first, and the processed food crowds itself out.",
+    "Aim for progress, not perfection. Eating well most of the time works better than being strict and quitting.",
+    "This app is education, not medical advice."
+  ]},
+  { icon: "🍽", title: "Build a balanced plate", color: "green", points: [
+    "Fill about half your plate with vegetables and fruit, a quarter with whole grains or starchy vegetables, and a quarter with protein.",
+    "Add a thumb of healthy fat: olive oil, nuts, seeds, avocado or fatty fish.",
+    "Choose water, tea or coffee (without lots of sugar) as your main drinks.",
+    "Eat protein and fiber at every meal to stay full and keep blood sugar steadier.",
+    "These ideas match the Harvard Healthy Eating Plate and the guidelines of the WHO, Brazil and many other countries."
+  ]},
+  { icon: "💧", title: "Water and drinks", color: "green", points: [
+    "Make water your default drink. Needs vary, but pale yellow urine is a simple sign of good hydration.",
+    "Sugary drinks are one of the easiest things to cut for a big health payoff.",
+    "Limit alcohol. Many health bodies, including the WHO, say that no level of alcohol is completely risk free.",
+    "Caffeine is fine for most adults in moderate amounts (EFSA: up to 400 mg a day), but not late in the day if it affects your sleep."
+  ]},
+  { icon: "😴", title: "Sleep", color: "green", points: [
+    "Most adults need at least 7 hours of sleep a night.",
+    "Keep a regular bedtime and wake time, even on weekends.",
+    "Dim lights and put screens away an hour before bed.",
+    "Avoid large meals, alcohol and caffeine close to bedtime.",
+    "Poor sleep raises hunger hormones and cravings, so sleep is part of any food plan."
+  ]},
+  { icon: "🏃", title: "Move your body", color: "green", points: [
+    "The WHO recommends 150 to 300 minutes of moderate activity a week, plus muscle-strengthening on at least 2 days.",
+    "Walking counts. A 10 to 30 minute walk after meals helps blood sugar.",
+    "Build strength with bodyweight, bands or weights. Muscle protects metabolism and bones as you age.",
+    "Pick something you enjoy so you keep doing it.",
+    "Break up long sitting with a short walk every hour."
+  ]},
+  { icon: "🦠", title: "Gut health", color: "green", points: [
+    "Fiber feeds good gut bacteria. The WHO suggests at least 25 g a day, and most people eat far less.",
+    "Eat a wide variety of plants: vegetables, fruit, beans, whole grains, nuts, seeds and herbs.",
+    "Include fermented foods like yogurt, kefir, kimchi and sauerkraut.",
+    "Add fiber slowly and drink water to avoid bloating.",
+    "Limit ultra-processed foods and emulsifier-heavy products when you can."
+  ]},
+  { icon: "🛒", title: "Smart shopping and cooking", color: "green", points: [
+    "Make a list and eat before you shop.",
+    "Build the cart from whole foods: produce, beans, whole grains, eggs, fish, plain dairy, nuts.",
+    "Use the scanner on products you buy often and keep the ones that come back green.",
+    "Frozen vegetables and fruit, canned beans and tinned fish are cheap, healthy and convenient.",
+    "Batch cook one or two things a week so a healthy meal is always ready.",
+    "At restaurants, look for grilled, baked or steamed dishes and ask for dressing and sauce on the side."
+  ]},
+  { icon: "🧠", title: "Cravings, habits and slips", color: "yellow", points: [
+    "Change your environment: keep tempting foods out of sight or out of the house.",
+    "Stack habits: attach a new habit to something you already do, like water after brushing your teeth.",
+    "Plan for cravings with an if-then plan: 'If I want a snack after dinner, then I drink tea and eat fruit first.'",
+    "Eat enough protein and don't skip meals so hunger doesn't win later.",
+    "If you slip, make the next choice a good one. One meal never undoes your progress.",
+    "Be kind to yourself. Shame and rigid rules usually backfire."
+  ]},
+  { icon: "🧘", title: "Stress, mind and spirit", color: "green", points: [
+    "Chronic stress drives cravings and poor sleep. Walk outside, breathe slowly or stretch for a few minutes each day.",
+    "Spend time with people you love. Social connection is strongly linked to better health and longer life.",
+    "Daily reflection, gratitude, prayer or meditation can help you stay grounded, if these are part of your life.",
+    "Spend time in sunlight and nature when you can.",
+    "Limit doomscrolling and late-night screens."
+  ]},
+  { icon: "🩺", title: "When to get professional help", color: "red", points: [
+    "See a doctor for unexplained weight loss or gain, constant fatigue, digestive problems that don't settle, or any new symptoms.",
+    "Get advice before starting supplements, fasting plans or very low calorie diets.",
+    "If food starts to feel stressful, rigid or out of control, or you feel guilt around eating, talk to a healthcare professional. Tracking numbers is not right for everyone.",
+    "A registered dietitian can build a plan around your medical needs, budget and culture."
+  ]}
+];

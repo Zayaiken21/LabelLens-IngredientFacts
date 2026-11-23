@@ -13,6 +13,7 @@
     document.querySelectorAll(".panel").forEach(p => p.classList.toggle("active", p.id === "tab-" + name));
     window.scrollTo({ top: 0, behavior: "smooth" });
     if (name === "library") renderLibrary();
+    if (window.LL && window.LL.onTab) window.LL.onTab(name);
   }
   document.querySelectorAll(".tab").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -161,7 +162,15 @@
     $("allN").textContent = current.watchList.length + current.goodList.length;
     renderHighlight();
     $("otherN").textContent = current.unmatched.length;
-    $("otherList").textContent = current.unmatched.join(", ") || "None";
+    const ol = $("otherList"); ol.innerHTML = "";
+    if (!current.unmatched.length) ol.textContent = "None";
+    else {
+      const hint = document.createElement("p"); hint.className = "small"; hint.textContent = "Tap one to teach LabelLens what it is."; ol.appendChild(hint);
+      current.unmatched.forEach(u => {
+        const b = document.createElement("button"); b.className = "hl plain tap"; b.textContent = u;
+        b.addEventListener("click", () => openAdd(u)); ol.appendChild(b);
+      });
+    }
     $("itemName").value = $("itemName").value || "";
     $("saveHint").textContent = currentPhoto ? "✔ Product photo attached" : "Tip: add a photo with a transparent background so you can recognize it later.";
     renderChips();
@@ -174,13 +183,15 @@
       const b = document.createElement("button");
       b.className = "hl " + p.color; b.textContent = p.text;
       if (p.color !== "plain") {
-        const hit = E.matches(p.text).sort((a, c) => ({ red: 3, yellow: 2, green: 1 }[c.color]) - ({ red: 3, yellow: 2, green: 1 }[a.color]))[0];
+        const R = { red: 3, yellow: 2, green: 1, neutral: 0.5 };
+        const hit = E.matches(p.text).sort((a, c) => R[c.color] - R[a.color])[0];
         b.addEventListener("click", () => openReason({ entry: hit, found: [p.text] }));
       }
       box.appendChild(b);
     });
   }
 
+  const dotFor = e => e.allergen ? "⚠️ " : ({ green: "🟢 ", red: "🔴 ", yellow: "🟡 ", neutral: "⚪ " }[e.color] || "");
   const EMPTY_MSG = { red: "🎉 Nothing in the red.", yellow: "Nothing in the yellow.", good: "No standout healthy ingredients found.", all: "Nothing flagged." };
   function renderChips() {
     document.querySelectorAll("#tab-results .filter").forEach(b => b.classList.toggle("active", b.dataset.f === filter));
@@ -189,6 +200,7 @@
     if (filter === "red" || filter === "all") items = items.concat(current.redList);
     if (filter === "yellow" || filter === "all") items = items.concat(current.yellowList);
     if (filter === "good" || filter === "all") items = items.concat(current.goodList);
+    if (filter === "all") items = items.concat(current.neutralList);
     if (!items.length) {
       list.innerHTML = `<p class="muted">${EMPTY_MSG[filter]}</p>`;
       return;
@@ -196,8 +208,7 @@
     items.forEach(x => {
       const b = document.createElement("button");
       b.className = "chip " + x.entry.color;
-      const dot = x.entry.color === "green" ? "🟢 " : x.entry.color === "red" ? "🔴 " : "🟡 ";
-      b.innerHTML = `${dot}${esc(x.entry.name)}<small>${esc(x.found[0])}</small>`;
+      b.innerHTML = `${dotFor(x.entry)}${esc(x.entry.name)}<small>${esc(x.found[0])}</small>`;
       b.addEventListener("click", () => openReason(x));
       list.appendChild(b);
     });
@@ -206,11 +217,11 @@
 
   let modalEntry = null;
   function openReason(x) {
-    const tagText = { red: "🔴 Avoid", yellow: "🟡 Caution", green: "🟢 Good" };
+    const tagText = { red: "🔴 Avoid", yellow: "🟡 Caution", green: "🟢 Good", neutral: "⚪ Neutral" };
     modalEntry = x.entry;
     const tag = $("modalTag");
     tag.className = "pill " + x.entry.color;
-    tag.textContent = tagText[x.entry.color];
+    tag.textContent = x.entry.allergen ? "⚠️ Allergen" : tagText[x.entry.color];
     $("modalTitle").textContent = x.entry.name;
     $("modalReason").textContent = x.entry.reason;
     $("modalWorldBox").hidden = !x.entry.world;
@@ -358,10 +369,11 @@
       if (f === "red" || f === "all") list = list.concat(a.redList);
       if (f === "yellow" || f === "all") list = list.concat(a.yellowList);
       if (f === "good" || f === "all") list = list.concat(a.goodList);
+      if (f === "all") list = list.concat(a.neutralList);
       if (!list.length) box.innerHTML = '<p class="muted">Nothing here.</p>';
       list.forEach(x => {
         const b = document.createElement("button"); b.className = "chip " + x.entry.color;
-        b.innerHTML = (x.entry.color === "green" ? "🟢 " : x.entry.color === "red" ? "🔴 " : "🟡 ") + esc(x.entry.name);
+        b.innerHTML = dotFor(x.entry) + esc(x.entry.name);
         b.addEventListener("click", () => { $("itemModal").hidden = true; openReason(x); });
         box.appendChild(b);
       });
@@ -410,17 +422,16 @@
     const q = $("glossSearch").value.trim().toLowerCase();
     const db = window.INGREDIENT_DB.slice().sort((a, b) => a.name.localeCompare(b.name));
     $("gAll").textContent = db.length;
-    ["red", "yellow", "green"].forEach(c => $("g" + c[0].toUpperCase() + c.slice(1)).textContent = db.filter(e => e.color === c).length);
+    ["red", "yellow", "green", "neutral"].forEach(c => $("g" + c[0].toUpperCase() + c.slice(1)).textContent = db.filter(e => e.color === c).length);
     const list = db.filter(e => (gFilter === "all" || e.color === gFilter) &&
       (!q || (e.name + " " + e.match.join(" ") + " " + (e.found || "") + " " + e.reason).toLowerCase().includes(q)));
     const box = $("glossList"); box.innerHTML = "";
     $("glossEmpty").hidden = list.length > 0;
-    const label = { red: "Avoid", yellow: "Caution", green: "Good" };
+    const label = { red: "Avoid", yellow: "Caution", green: "Good", neutral: "Neutral" };
     list.forEach(e => {
       const d = document.createElement("details");
-      d.className = "gloss " + e.color; d.id = "g-" + e.name.replace(/\W+/g, "-").toLowerCase();
-      const alias = [...new Set(e.match.map(m => m.trim()).filter(m => m.length > 2))].join(", ");
-      d.innerHTML = `<summary><span class="dot ${e.color}"></span>${esc(e.name)}<span class="pill ${e.color}">${label[e.color]}</span></summary>
+      d.className = "gloss " + e.color; d.id = "g-" + e.name.replace(/\W+/g, "-").toLowerCase();      const alias = [...new Set(e.match.map(m => m.trim()).filter(m => m.length > 2))].join(", ");
+      d.innerHTML = `<summary><span class="dot ${e.color}"></span>${esc(e.name)}<span class="pill ${e.color}">${e.allergen ? "Allergen" : label[e.color]}</span></summary>
         <div class="body">
           <p>${esc(e.reason)}</p>
           ${e.world ? `<div class="worldbox"><b>🌍 Around the world</b><p>${esc(e.world)}</p></div>` : ""}
@@ -438,19 +449,51 @@
   $("glossSearch").addEventListener("input", renderGlossary);
 
   function renderGuides() {
-    const box = $("guideList"); box.innerHTML = "";
-    window.EDU.forEach((g, idx) => {
-      const d = document.createElement("details");
-      d.className = "guide " + g.color; if (idx === 0) d.open = true;
-      d.innerHTML = `<summary>${g.icon} ${esc(g.title)}</summary><ul>${g.points.map(p => `<li>${esc(p)}</li>`).join("")}</ul>`;
-      box.appendChild(d);
+    [["guideList", window.EDU], ["livingList", window.EDU_LIVING], ["healthList", window.EDU_HEALTH]].forEach(([id, data]) => {
+      const box = $(id); box.innerHTML = "";
+      data.forEach((g, idx) => {
+        const d = document.createElement("details");
+        d.className = "guide " + g.color; if (idx === 0) d.open = true;
+        d.innerHTML = `<summary>${g.icon} ${esc(g.title)}</summary><ul>${g.points.map(p => `<li>${esc(p)}</li>`).join("")}</ul>`;
+        box.appendChild(d);
+      });
     });
   }
 
   function setSeg(name) {
     document.querySelectorAll(".segbtn").forEach(b => b.classList.toggle("active", b.dataset.seg === name));
-    $("seg-glossary").hidden = name !== "glossary"; $("seg-guides").hidden = name !== "guides";
+    ["glossary", "guides", "living", "health"].forEach(s => { $("seg-" + s).hidden = s !== name; });
   }
+
+  /* ----- custom ingredients (saved on this device) ----- */
+  function loadCustom() {
+    try { JSON.parse(localStorage.getItem("ll_custom") || "[]").forEach(c => window.INGREDIENT_DB.push(c)); } catch (e) { /* ignore */ }
+  }
+  function openAdd(name) {
+    showTab("learn"); setSeg("glossary");
+    $("addIngBox").open = true; $("addName").value = name || "";
+    setTimeout(() => $("addIngBox").scrollIntoView({ behavior: "smooth", block: "center" }), 120);
+  }
+  $("addSave").addEventListener("click", () => {
+    const name = $("addName").value.trim();
+    if (!name) return toast("Enter an ingredient name");
+    const color = $("addColor").value;
+    const match = [name.toLowerCase(), ...$("addMatch").value.split(",").map(s => s.trim().toLowerCase()).filter(Boolean)];
+    const entry = {
+      name, type: color === "green" ? "good" : color === "neutral" ? "neutral" : "watch",
+      level: color === "red" ? 2 : color === "yellow" ? 1 : 0, color, match, custom: true,
+      found: "Added by you", reason: $("addReason").value.trim() || "Added by you.", world: ""
+    };
+    window.INGREDIENT_DB.push(entry);
+    try {
+      const all = JSON.parse(localStorage.getItem("ll_custom") || "[]"); all.push(entry);
+      localStorage.setItem("ll_custom", JSON.stringify(all));
+    } catch (e) { toast("Saved for this visit only"); }
+    ["addName", "addMatch", "addReason"].forEach(i => ($(i).value = ""));
+    $("addIngBox").open = false;
+    renderGlossary(); toast("Ingredient added ✔");
+    if (current) { current = { text: current.text, ...E.analyze(current.text) }; renderResults(); }
+  });
   document.querySelectorAll(".segbtn").forEach(b => b.addEventListener("click", () => setSeg(b.dataset.seg)));
 
   function openGlossary(name) {
@@ -462,8 +505,15 @@
     if (el) { el.open = true; setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 120); }
   }
 
-  renderGlossary(); renderGuides();
+  loadCustom(); renderGlossary(); renderGuides();
 
   /* ---------- init ---------- */
   DB.open().then(refreshCount).catch(() => toast("Saving is unavailable in this browser mode"));
+
+  /* shared with tracker.js and journey.js */
+  window.LL = Object.assign(window.LL || {}, {
+    toast, showTab, esc, openGlossary, E,
+    savedItems: () => (DB.db ? DB.all() : Promise.resolve([]))
+  });
+  if (window.LL.onTab) window.LL.onTab("scan");
 })();

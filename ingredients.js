@@ -201,7 +201,7 @@ window.INGREDIENT_DB = [
 ];
 
 /* colors: red / yellow / green */
-window.INGREDIENT_DB.forEach(e => { e.color = e.type === "good" ? "green" : (e.level >= 2 ? "red" : "yellow"); });
+window.INGREDIENT_DB.forEach(e => { e.color = e.type === "good" ? "green" : e.type === "neutral" ? "neutral" : (e.level >= 2 ? "red" : "yellow"); });
 
 /* ---------- Analyzer ---------- */
 window.IngredientEngine = {
@@ -244,12 +244,13 @@ window.IngredientEngine = {
   matches(token) {
     const low = " " + token.toLowerCase() + " ";
     return window.INGREDIENT_DB.filter(entry =>
-      entry.match.some(frag => low.includes(frag.startsWith(" ") ? frag : (frag.length <= 4 ? " " + frag : frag))));
+      entry.match.some(frag => low.includes(frag.startsWith(" ") ? frag : (frag.length <= 4 ? " " + frag : frag))) &&
+      !(entry.not || []).some(n => low.includes(n)));
   },
 
   /* The label as colored pieces: red > yellow > green > plain */
   highlight(raw) {
-    const rank = { red: 3, yellow: 2, green: 1 };
+    const rank = { red: 3, yellow: 2, green: 1, neutral: 0.5 };
     return this.splitTop(this.clean(raw)).map(text => {
       const found = this.matches(text);
       let color = "plain";
@@ -260,10 +261,10 @@ window.IngredientEngine = {
 
   analyze(raw) {
     const tokens = this.parse(raw);
-    const watch = new Map(), good = new Map();
+    const watch = new Map(), good = new Map(), neutral = new Map();
     tokens.forEach(token => {
       this.matches(token).forEach(entry => {
-        const bucket = entry.type === "watch" ? watch : good;
+        const bucket = entry.type === "watch" ? watch : entry.type === "neutral" ? neutral : good;
         if (!bucket.has(entry.name)) bucket.set(entry.name, { entry, found: [] });
         bucket.get(entry.name).found.push(token);
       });
@@ -276,7 +277,8 @@ window.IngredientEngine = {
     watchList.forEach(w => score -= w.entry.level * 6);
     goodList.forEach(() => score += 4);
     score = Math.max(0, Math.min(100, Math.round(score)));
-    const matched = new Set([...watchList, ...goodList].flatMap(x => x.found));
-    return { tokens, watchList, redList, yellowList, goodList, score, unmatched: tokens.filter(t => !matched.has(t)) };
+    const neutralList = [...neutral.values()];
+    const matched = new Set([...watchList, ...goodList, ...neutralList].flatMap(x => x.found));
+    return { tokens, watchList, redList, yellowList, goodList, neutralList, score, unmatched: tokens.filter(t => !matched.has(t)) };
   }
 };

@@ -29,6 +29,8 @@
   <button class="tab" data-tab="studio" role="tab">✂️<br>Photo</button>
   <button class="tab" data-tab="library" role="tab">⭐<br>Saved <span id="savedCount" class="badge">0</span></button>
   <button class="tab" data-tab="learn" role="tab">📚<br>Learn</button>
+  <button class="tab" data-tab="track" role="tab">🥗<br>Track</button>
+  <button class="tab" data-tab="change" role="tab">🔥<br>Change</button>
 </nav>
 
 <main>
@@ -152,6 +154,8 @@
     <div class="seg">
       <button class="segbtn active" data-seg="glossary">📘 Glossary</button>
       <button class="segbtn" data-seg="guides">🎓 Food smarts</button>
+      <button class="segbtn" data-seg="living">🌱 Living food</button>
+      <button class="segbtn" data-seg="health">💪 Get healthier</button>
     </div>
 
     <div id="seg-glossary">
@@ -164,10 +168,25 @@
           <button class="filter red" data-g="red">🔴 <b id="gRed">0</b></button>
           <button class="filter yellow" data-g="yellow">🟡 <b id="gYellow">0</b></button>
           <button class="filter green" data-g="green">🟢 <b id="gGreen">0</b></button>
+          <button class="filter neutral" data-g="neutral">⚪ <b id="gNeutral">0</b></button>
         </div>
       </div>
       <div id="glossList"></div>
       <p id="glossEmpty" class="card center muted" hidden>No matches. Try another name.</p>
+      <details class="card" id="addIngBox">
+        <summary>➕ Teach LabelLens a new ingredient</summary>
+        <p class="muted small">Found something we don't know yet? Add it. It is saved on this device and used in every scan.</p>
+        <input id="addName" type="text" placeholder="Ingredient name (e.g. Sodium propionate)">
+        <input id="addMatch" type="text" placeholder="Other spellings, separated by commas (optional)">
+        <select id="addColor">
+          <option value="red">🔴 Avoid</option>
+          <option value="yellow" selected>🟡 Caution</option>
+          <option value="green">🟢 Good</option>
+          <option value="neutral">⚪ Neutral</option>
+        </select>
+        <textarea id="addReason" rows="3" placeholder="Why? (short reason you want to remember)"></textarea>
+        <div class="row"><button class="btn primary" id="addSave">Save ingredient</button></div>
+      </details>
     </div>
 
     <div id="seg-guides" hidden>
@@ -177,6 +196,184 @@
       </div>
       <div id="guideList"></div>
       <p class="muted small center">Sources: WHO, EFSA, IARC, JECFA, UK Food Standards Agency, Health Canada, US FDA and national dietary guidelines.</p>
+    </div>
+
+    <div id="seg-living" hidden>
+      <div class="card">
+        <h2>🌱 Living vs dead food</h2>
+        <p class="muted small">How to tell food that is alive and whole from food that is stripped, fake or built in a factory.</p>
+      </div>
+      <div id="livingList"></div>
+    </div>
+
+    <div id="seg-health" hidden>
+      <div class="card">
+        <h2>💪 Get yourself healthier</h2>
+        <p class="muted small">Simple, evidence-based habits for food, sleep, movement, gut and mind. General education, not medical advice.</p>
+      </div>
+      <div id="healthList"></div>
+    </div>
+  </section>
+
+  <!-- TRACK -->
+  <section id="tab-track" class="panel">
+    <div class="card">
+      <div class="daynav">
+        <button class="btn" id="dayPrev" aria-label="Previous day">‹</button>
+        <div class="center"><h2 id="dayTitle">Today</h2><p class="muted small" id="daySub"></p></div>
+        <button class="btn" id="dayNext" aria-label="Next day">›</button>
+      </div>
+      <div class="row center-row"><button class="btn ghost" id="dayToday">Jump to today</button></div>
+    </div>
+
+    <div class="card">
+      <h2>Today at a glance</h2>
+      <div id="trkSummary" class="sumgrid"></div>
+      <div id="trkBar" class="stackbar" title="Share of foods by color"></div>
+      <p class="muted small" id="trkBarLabel"></p>
+    </div>
+
+    <div class="card">
+      <h2>Daily checks</h2>
+      <div class="counters">
+        <div class="counter"><span>💧 Water</span><div><button class="btn" data-c="water" data-d="-1">−</button><b id="cWater">0</b><button class="btn" data-c="water" data-d="1">＋</button></div><small class="muted" id="gWater"></small></div>
+        <div class="counter"><span>🥦 Veggies</span><div><button class="btn" data-c="veg" data-d="-1">−</button><b id="cVeg">0</b><button class="btn" data-c="veg" data-d="1">＋</button></div><small class="muted" id="gVeg"></small></div>
+        <div class="counter"><span>🍎 Fruit</span><div><button class="btn" data-c="fruit" data-d="-1">−</button><b id="cFruit">0</b><button class="btn" data-c="fruit" data-d="1">＋</button></div><small class="muted" id="gFruit"></small></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Log food</h2>
+      <select id="fMeal">
+        <option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack</option>
+      </select>
+      <select id="fSaved"><option value="">Pick a saved item (optional)</option></select>
+      <input id="fName" type="text" placeholder="What did you eat?">
+      <select id="fColor">
+        <option value="green">🟢 Living / whole food</option>
+        <option value="yellow">🟡 In the middle</option>
+        <option value="red">🔴 Processed / avoid</option>
+      </select>
+      <div id="numFields" class="numgrid">
+        <input id="fCal" type="number" inputmode="decimal" min="0" placeholder="Calories">
+        <input id="fPro" type="number" inputmode="decimal" min="0" placeholder="Protein g">
+        <input id="fCarb" type="number" inputmode="decimal" min="0" placeholder="Carbs g">
+        <input id="fFat" type="number" inputmode="decimal" min="0" placeholder="Fat g">
+      </div>
+      <div class="row"><button class="btn primary" id="fAdd">＋ Add to diary</button></div>
+    </div>
+
+    <div id="trkList"></div>
+
+    <div class="card">
+      <h2>Notes</h2>
+      <textarea id="trkNote" rows="3" placeholder="How did you feel today? Energy, hunger, mood…"></textarea>
+    </div>
+
+    <div class="card">
+      <h2>Last 7 days</h2>
+      <div id="trkWeek" class="week"></div>
+    </div>
+
+    <details class="card">
+      <summary>⚙ Goals &amp; settings</summary>
+      <p class="muted small">Set goals that fit you. Leave a box empty to turn it off.</p>
+      <div class="numgrid">
+        <label class="lbl2">Water (glasses)<input id="goalWater" type="number" min="0" inputmode="numeric"></label>
+        <label class="lbl2">Veggies (servings)<input id="goalVeg" type="number" min="0" inputmode="numeric"></label>
+        <label class="lbl2">Fruit (servings)<input id="goalFruit" type="number" min="0" inputmode="numeric"></label>
+        <label class="lbl2" id="goalCalWrap">Calories (optional)<input id="goalCal" type="number" min="0" inputmode="numeric"></label>
+      </div>
+      <label class="check"><input type="checkbox" id="hideNums"> Hide calories and numbers (focus on food quality instead)</label>
+      <div class="row"><button class="btn primary" id="goalSave">Save</button><button class="btn ghost" id="trkExport">Export CSV</button></div>
+      <p class="muted small">Counting numbers isn't right for everyone. If tracking makes you anxious, hide the numbers or talk to a healthcare professional.</p>
+    </details>
+  </section>
+
+  <!-- CHANGE (life transformation) -->
+  <section id="tab-change" class="panel">
+    <div id="chSetup" class="card">
+      <h2>🔥 Start your 90-day change</h2>
+      <p class="muted">For people who are serious. Three phases, daily check-ins, weekly reviews and a record of how you're growing.</p>
+      <label class="lbl2">Why are you doing this?
+        <textarea id="chWhy" rows="3" placeholder="Write your real reason. You'll read this on hard days."></textarea></label>
+      <label class="lbl2">Who are you becoming?
+        <input id="chIdentity" type="text" placeholder="e.g. A strong, healthy father who has energy for his family"></label>
+      <label class="lbl2">Start date<input id="chStart" type="date"></label>
+      <div class="row"><button class="btn primary" id="chBegin">Begin the journey</button></div>
+      <p class="muted small">Talk to a doctor before big changes to diet or exercise.</p>
+    </div>
+
+    <div id="chMain" hidden>
+      <div class="card heroCh">
+        <div class="muted small" id="chDayLabel"></div>
+        <h2 id="chPhase">Foundation</h2>
+        <p id="chIdentityShow" class="muted"></p>
+        <div class="progress thick"><div id="chBar"></div><span id="chBarLabel"></span></div>
+        <div class="statrow">
+          <div><b id="chStreak">0</b><small>day streak</small></div>
+          <div><b id="chBest">0</b><small>best streak</small></div>
+          <div><b id="chRate">0%</b><small>last 7 days</small></div>
+        </div>
+        <details><summary class="muted small">💬 My why</summary><p id="chWhyShow"></p></details>
+      </div>
+
+      <div class="card">
+        <h2>Today's check-in</h2>
+        <p class="muted small" id="chToday"></p>
+        <div id="chHabits"></div>
+        <div class="row"><input id="chNewHabit" type="text" placeholder="Add your own habit…" style="flex:1;min-width:150px"><button class="btn" id="chAddHabit">Add</button></div>
+      </div>
+
+      <div class="card">
+        <h2>This phase</h2>
+        <div id="chPlan"></div>
+      </div>
+
+      <div class="card">
+        <h2>90-day map</h2>
+        <div id="chGrid" class="chgrid"></div>
+        <p class="muted small">🟩 all habits done · 🟨 some · ⬜ none · dark = future</p>
+      </div>
+
+      <div class="card">
+        <h2>Body &amp; energy log <span class="muted small">(optional)</span></h2>
+        <div class="numgrid">
+          <input id="mWeight" type="number" step="0.1" inputmode="decimal" placeholder="Weight">
+          <input id="mWaist" type="number" step="0.1" inputmode="decimal" placeholder="Waist">
+          <input id="mEnergy" type="number" min="1" max="5" inputmode="numeric" placeholder="Energy 1–5">
+          <input id="mSleep" type="number" step="0.5" inputmode="decimal" placeholder="Sleep hrs">
+        </div>
+        <div class="row"><button class="btn primary" id="mSave">Log today</button><button class="btn ghost" id="mToggle">Show / hide weight</button></div>
+        <div id="mChart"></div>
+      </div>
+
+      <div class="card">
+        <h2>Weekly review</h2>
+        <p class="muted small" id="wkLabel"></p>
+        <textarea id="wkWell" rows="2" placeholder="What went well this week?"></textarea>
+        <textarea id="wkFix" rows="2" placeholder="What got in the way?"></textarea>
+        <input id="wkFocus" type="text" placeholder="One focus for next week">
+        <div class="row"><button class="btn primary" id="wkSave">Save review</button></div>
+        <div id="wkHistory"></div>
+      </div>
+
+      <div class="card">
+        <h2>If-then plans</h2>
+        <p class="muted small">Decide your response before the temptation hits.</p>
+        <div id="ifList"></div>
+        <div class="row"><input id="ifWhen" type="text" placeholder="If…" style="flex:1;min-width:120px"><input id="ifThen" type="text" placeholder="Then I will…" style="flex:1;min-width:120px"><button class="btn" id="ifAdd">Add</button></div>
+      </div>
+
+      <div class="card">
+        <h2>Milestones</h2>
+        <div id="chBadges" class="badges"></div>
+      </div>
+
+      <div class="card">
+        <div class="row" style="margin:0"><button class="btn ghost" id="chExport">Export my data</button><button class="btn ghost" id="chReset">Restart journey</button></div>
+        <p class="muted small">Your journey stays on this device. Export to back it up.</p>
+      </div>
     </div>
   </section>
 
@@ -212,7 +409,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="ingredients.js"></script>
+<script src="ingredients-extra.js"></script>
 <script src="education.js"></script>
 <script src="app.js"></script>
+<script src="tracker.js"></script>
+<script src="journey.js"></script>
 </body>
 </html>
