@@ -230,3 +230,12 @@ details.card summary{cursor:pointer;font-weight:700}
 .timeline p{margin:4px 0 0;font-size:.9rem}
 .srcl{padding-left:18px}
 #fxSearch{width:100%;margin-bottom:10px}
+
+/* ---- hover scanner ---- */
+.hovertip{position:fixed;z-index:200;background:#0f1d33;border:1px solid var(--mint);border-radius:12px;padding:10px 12px;font-size:.82rem;line-height:1.35;box-shadow:0 10px 30px rgba(0,0,0,.55),0 0 18px rgba(34,211,166,.25);pointer-events:none}
+.hovertip .tt-head{display:flex;justify-content:space-between;gap:8px;margin-bottom:4px}
+.hovertip .tt-head.red b{color:#f87171}.hovertip .tt-head.yellow b{color:#fbbf24}.hovertip .tt-head.green b{color:#34d399}
+.hovertip .tt-claim{margin-top:6px;padding:4px 6px;background:#16294a;border-radius:6px}
+.hovertip .tt-sub{margin-top:6px;opacity:.65;font-size:.74rem}
+.hl .w{border-radius:4px;transition:background .12s}.hl .w:hover{background:rgba(255,255,255,.18);outline:1px solid rgba(255,255,255,.35)}
+.livescan{margin-top:10px}.livehead{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:6px}

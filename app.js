@@ -47,7 +47,7 @@
   /* =====================================================
      SCAN: pick photo -> crop -> OCR
   ===================================================== */
-  let qc = null, scanBusy = false, ocrWorker = null;
+  let qc = null, scanBusy = false;
   const anim = { cur: 0, tgt: 0, raf: 0 };
   function setBar(barEl, pct) {           // eased, always-moving progress
     anim.tgt = Math.max(anim.tgt, pct);
@@ -77,7 +77,7 @@
   const scanOpts = () => ({ filter: $("scanFilter").value, boost: +$("scanBoost").value });
   $("scanPreview").addEventListener("click", () => {
     if (!qc || !qc.src) return;
-    const c = qc.crop(scanOpts()), sm = document.createElement("canvas"), k = Math.min(1, 900 / c.width);
+    const c = prepFor($("scanFilter").value), sm = document.createElement("canvas"), k = Math.min(1, 900 / c.width);
     sm.width = Math.round(c.width * k); sm.height = Math.round(c.height * k); sm.getContext("2d").drawImage(c, 0, 0, sm.width, sm.height);
     $("scanPrevImg").src = sm.toDataURL("image/jpeg", 0.8); $("scanPrevWrap").hidden = false;
   });
@@ -116,46 +116,50 @@
     });
   }
 
-  async function getWorker(st) {
-    if (ocrWorker) return ocrWorker;
-    ocrWorker = await Tesseract.createWorker("eng", 1, {
-      logger: m => {
-        if (m.status) st.textContent = m.status.replace(/_/g, " ");
-        if (typeof m.progress === "number" && ocrWorker !== null && m.status === "recognizing text") setBar($("scanBar"), 20 + m.progress * (anim.span || 60));
-      }
-    });
-    await ocrWorker.setParameters({ preserve_interword_spaces: "1", user_defined_dpi: "300" });
-    return ocrWorker;
+  function prepFor(m) {
+    return m === "classic"
+      ? classicPrep(qc.crop({ filter: "original", minLong: 0, maxDim: 2400 }))
+      : qc.crop({ filter: m, boost: +$("scanBoost").value });
   }
+  /* The ORIGINAL prep: grayscale + contrast, upscale small crops. Same as the first version. */
+  function classicPrep(canvas) {
+    const scale = canvas.width < 1400 ? 1400 / canvas.width : 1;
+    const out = document.createElement("canvas");
+    out.width = Math.round(canvas.width * scale); out.height = Math.round(canvas.height * scale);
+    const ctx = out.getContext("2d");
+    ctx.filter = "grayscale(1) contrast(1.35)";
+    ctx.drawImage(canvas, 0, 0, out.width, out.height);
+    return out;
+  }
+  const readCanvas = (canvas, st, bar, lo, hi) => Tesseract.recognize(canvas, "eng", {
+    logger: m => {
+      if (m.status) st.textContent = m.status.replace(/_/g, " ");
+      if (typeof m.progress === "number") setBar(bar, lo + m.progress * (hi - lo));
+    }
+  });
 
   $("scanRunBtn").addEventListener("click", async () => {
     if (!qc || !qc.src || scanBusy) return;
-    if (!window.Tesseract) return toast("OCR engine is still loading. Try again in a moment.");
+    if (!window.Tesseract) return toast("OCR engine failed to load. Check your connection.");
     scanBusy = true; const btn = $("scanRunBtn"); btn.disabled = true;
     const prog = $("scanProgress"), bar = $("scanBar"), st = $("scanStatus");
-    anim.cur = 0; anim.tgt = 0; anim.span = 60; prog.hidden = false; prog.classList.add("scanning"); bar.style.width = "0%";
-    st.textContent = "Flattening the label…"; setBar(bar, 8);
+    anim.cur = 0; anim.tgt = 0; prog.hidden = false; prog.classList.add("scanning"); bar.style.width = "0%";
+    st.textContent = "Preparing image…"; setBar(bar, 5);
     try {
       await new Promise(r => setTimeout(r, 30));
-      const o = scanOpts();
-      const passes = [{ ...o, tag: "main" }];
-      if (o.filter !== "adaptive") passes.push({ ...o, filter: "adaptive", tag: "alt" });
-      let best = null;
-      for (let i = 0; i < passes.length; i++) {
-        anim.span = 60 / passes.length; anim.tgt = Math.max(anim.tgt, 15 + i * 40); setBar(bar, 15 + i * 40);
-        st.textContent = i ? "Second look with different contrast…" : "Loading reader…";
-        const canvas = qc.crop(passes[i]);
-        const w = await getWorker(st);
-        const { data } = await w.recognize(canvas);
-        const score = (data.confidence || 0) + Math.min(20, (data.text || "").length / 40);
-        if (!best || score > best.score) best = { score, data };
-        if (data.confidence >= 88) break;
+      const mode = $("scanFilter").value, hard = $("scanHard").checked;
+      const prep = prepFor;
+      let { data } = await readCanvas(prep(mode), st, bar, 8, hard ? 55 : 98);
+      if (hard) {
+        st.textContent = "Second look…";
+        const alt = await readCanvas(prep(mode === "adaptive" ? "classic" : "adaptive"), st, bar, 55, 96);
+        if (alt.data.confidence > data.confidence) data = alt.data;
       }
-      st.textContent = "Tidying words…"; setBar(bar, 96);
-      const text = correctWords(cleanOCR(best.data.text));
-      $("ingText").value = text;
+      let text = cleanOCR(data.text);
+      if (hard) text = correctWords(text);
+      $("ingText").value = text; $("ingText").dispatchEvent(new Event("input"));
       setBar(bar, 100);
-      toast(text ? "Text read (" + Math.round(best.data.confidence) + "% sure). Check it, then Analyze" : "No text found. Move the corners tighter or try Preview.");
+      toast(text ? "Text read. Check it, then Analyze" : "No text found. Tighten the corners or try a different filter.");
       $("ingText").scrollIntoView({ behavior: "smooth", block: "center" });
     } catch (err) {
       console.error(err); toast("Could not read the image");
@@ -171,8 +175,7 @@
       .replace(/[|_~`]+/g, " ")
       .replace(/\s{2,}/g, " ")
       .replace(/\s+,/g, ",")
-      .replace(/(\d)\s*[Oo]\s*%/g, "$10%")
-      .trim();
+            .trim();
   }
 
   $("pasteBtn").addEventListener("click", async () => {
@@ -229,20 +232,89 @@
     renderChips();
   }
 
-  /* the whole label, color coded */
+  /* ---------- hover / tap scanner ---------- */
+  const RANK = { red: 3, yellow: 2, green: 1, neutral: 0.5 };
+  const best = text => E.matches(text).sort((a, c) => (RANK[c.color] || 0) - (RANK[a.color] || 0))[0];
+  function claimsFor(entry) {
+    const F = window.FACTS; if (!F || !entry) return [];
+    const keys = entry.match.concat([entry.name]).map(k => k.toLowerCase().trim()).filter(k => k.length >= 5);
+    return F.claims.filter(c => { const q = c.q.toLowerCase(); return keys.some(k => q.includes(k)); });
+  }
+  const TAGS = { red: "🔴 Avoid", yellow: "🟡 Caution", green: "🟢 Good", neutral: "⚪ Neutral" };
+  const tip = document.createElement("div"); tip.id = "hoverTip"; tip.className = "hovertip"; tip.hidden = true; document.body.appendChild(tip);
+  let tipTimer = 0;
+  function showTip(el, text, pieceText) {
+    const hit = best(text) || (pieceText && best(pieceText));
+    let html;
+    if (!hit) html = `<b>${esc(text)}</b><div class="tt-sub">Not in our list yet. Tap it to look in the glossary, or add it under Learn.</div>`;
+    else {
+      const claims = claimsFor(hit).map(c => `<div class="tt-claim">⚖️ ${esc(F_VERDICT(c))}: ${esc(c.q)}</div>`).join("");
+      html = `<div class="tt-head ${hit.color}"><b>${esc(hit.name)}</b> <span>${TAGS[hit.color] || ""}${hit.allergen ? " · allergen" : ""}</span></div>
+        <div class="tt-body">${esc(hit.reason.length > 190 ? hit.reason.slice(0, 187) + "…" : hit.reason)}</div>${claims}<div class="tt-sub">Tap for the full reason</div>`;
+    }
+    tip.innerHTML = html; tip.hidden = false;
+    const r = el.getBoundingClientRect(), w = Math.min(300, innerWidth - 16);
+    tip.style.width = w + "px";
+    let x = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), innerWidth - w - 8), y = r.bottom + 8;
+    if (y + tip.offsetHeight > innerHeight - 8) y = Math.max(8, r.top - tip.offsetHeight - 8);
+    tip.style.left = x + "px"; tip.style.top = y + "px";
+    clearTimeout(tipTimer);
+  }
+  const F_VERDICT = c => (window.FACTS && window.FACTS.verdicts[c.v] ? window.FACTS.verdicts[c.v][0] : "Fact check");
+  const hideTip = () => { tip.hidden = true; };
+  function bindTip(el, text, pieceText) {
+    el.addEventListener("pointerenter", e => { if (e.pointerType === "mouse") showTip(el, text, pieceText); });
+    el.addEventListener("pointerleave", e => { if (e.pointerType === "mouse") hideTip(); });
+    el.addEventListener("focus", () => showTip(el, text, pieceText));
+    el.addEventListener("blur", hideTip);
+    el.addEventListener("pointerdown", e => { if (e.pointerType !== "mouse") { showTip(el, text, pieceText); clearTimeout(tipTimer); tipTimer = setTimeout(hideTip, 3500); } });
+  }
+  document.addEventListener("scroll", hideTip, true);
+
+  /* the whole label, color coded; every word is hoverable */
   function renderHighlight() {
     const box = $("highlightBox"); box.innerHTML = "";
     E.highlight(current.text).forEach(p => {
       const b = document.createElement("button");
-      b.className = "hl " + p.color; b.textContent = p.text;
-      if (p.color !== "plain") {
-        const R = { red: 3, yellow: 2, green: 1, neutral: 0.5 };
-        const hit = E.matches(p.text).sort((a, c) => R[c.color] - R[a.color])[0];
-        b.addEventListener("click", () => openReason({ entry: hit, found: [p.text] }));
-      }
+      b.className = "hl " + p.color;
+      p.text.split(/(\s+)/).forEach(w => {
+        if (!w.trim()) { b.appendChild(document.createTextNode(w)); return; }
+        const sp = document.createElement("span"); sp.className = "w"; sp.textContent = w;
+        const clean = w.replace(/[^A-Za-z0-9\- ]/g, "");
+        if (clean.length >= 3) bindTip(sp, clean, p.text);
+        b.appendChild(sp);
+      });
+      const hit = p.color !== "plain" ? best(p.text) : null;
+      b.addEventListener("click", () => { hideTip(); if (hit) openReason({ entry: hit, found: [p.text] }); else openGlossary(p.text); });
       box.appendChild(b);
     });
   }
+
+  /* live scanner under the text box: flags known ingredients as you type or scan */
+  let liveT = 0;
+  function liveScan() {
+    const box = $("liveScan"), txt = $("ingText").value.trim();
+    if (!txt) { box.innerHTML = ""; return; }
+    const pieces = E.highlight(txt), cnt = { red: 0, yellow: 0, green: 0 };
+    const seen = new Set(), chips = [];
+    pieces.forEach(p => {
+      if (!(p.color in cnt)) return; cnt[p.color]++;
+      const hit = best(p.text); if (!hit || seen.has(hit.name)) return; seen.add(hit.name); chips.push({ p, hit });
+    });
+    chips.sort((a, c) => RANK[c.hit.color] - RANK[a.hit.color]);
+    box.innerHTML = `<div class="livehead"><b>Live scan</b> <span>🔴 ${cnt.red}</span> <span>🟡 ${cnt.yellow}</span> <span>🟢 ${cnt.green}</span> <small class="muted">${pieces.length} items. Hover or tap a flag.</small></div>`;
+    const row = document.createElement("div"); row.className = "chips";
+    chips.slice(0, 40).forEach(({ p, hit }) => {
+      const b = document.createElement("button"); b.className = "chip " + hit.color;
+      b.innerHTML = `${dotFor(hit)}${esc(hit.name)}<small>${esc(p.text.slice(0, 40))}</small>`;
+      bindTip(b, p.text, p.text);
+      b.addEventListener("click", () => { hideTip(); openReason({ entry: hit, found: [p.text] }); });
+      row.appendChild(b);
+    });
+    box.appendChild(row);
+  }
+  $("ingText").addEventListener("input", () => { clearTimeout(liveT); liveT = setTimeout(liveScan, 250); });
+  setTimeout(liveScan, 0);
 
   const dotFor = e => e.allergen ? "⚠️ " : ({ green: "🟢 ", red: "🔴 ", yellow: "🟡 ", neutral: "⚪ " }[e.color] || "");
   const EMPTY_MSG = { red: "🎉 Nothing in the red.", yellow: "Nothing in the yellow.", good: "No standout healthy ingredients found.", all: "Nothing flagged." };
