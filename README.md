@@ -3,7 +3,7 @@
 Scan the back of any product, see what is really inside, and save it for later. Runs entirely in the browser, so it works on GitHub Pages with no server.
 
 ## Features
-- **Scan**: take or upload a photo, drag any of the 4 corners to crop, and read it on-device with the Tesseract OCR engine (classic OCR, not generative AI). Default is the original classic prep that read labels best; other filters and a "try harder" pass are optional. A live scanner flags known ingredients as you type, and hovering or tapping any word shows its color, reason and related fact checks.
+- **Scan**: a live camera scanner. Fit the ingredient list in the frame, it reads continuously on-device (Tesseract OCR, not generative AI), ignores anything that does not look like an ingredient list, and locks when the text is steady. A photo option uses the same reader. The Live scan panel colors each ingredient and shows the reason on hover or tap.
 - **Color-coded results**: your label highlighted red (avoid), yellow (caution) and green (good), with filters and a tap-for-reason popup that includes how regulators around the world see each ingredient.
 - **Photo studio**: 4-corner crop, then cut out the background by hand with a magic wand, auto-edges, erase/restore brush and undo. No AI, exports a transparent PNG.
 - **Facts**: evidence-graded claim checker, law history timeline, how enzymes are (and are not) listed, fluoride, body and lab-test primer, herb safety, and a source list. Each entry links to government, WHO/IARC, EFSA, EUR-Lex or peer-reviewed sources.

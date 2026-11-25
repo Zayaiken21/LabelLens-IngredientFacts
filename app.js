@@ -47,54 +47,28 @@
   /* =====================================================
      SCAN: pick photo -> crop -> OCR
   ===================================================== */
-  let qc = null, scanBusy = false;
+  let scanBusy = false;
   const anim = { cur: 0, tgt: 0, raf: 0 };
   function setBar(barEl, pct) {           // eased, always-moving progress
-    anim.tgt = Math.max(anim.tgt, pct);
+    anim.tgt = pct;
     if (anim.raf) return;
     const tick = () => {
-      anim.cur += (anim.tgt - anim.cur) * 0.14 + 0.05;
-      if (anim.cur > anim.tgt) anim.cur = anim.tgt;
+      anim.cur += (anim.tgt - anim.cur) * 0.14;
+      if (Math.abs(anim.tgt - anim.cur) < 0.2) anim.cur = anim.tgt;
       barEl.style.width = anim.cur.toFixed(1) + "%";
-      anim.raf = Math.abs(anim.tgt - anim.cur) > 0.1 || scanBusy ? requestAnimationFrame(tick) : 0;
+      anim.raf = anim.cur !== anim.tgt ? requestAnimationFrame(tick) : 0;
     };
     anim.raf = requestAnimationFrame(tick);
   }
 
-  $("scanFile").addEventListener("change", async e => {
-    const f = e.target.files[0]; if (!f) return;
-    if (!qc) qc = new LLCrop.QuadCrop($("scanCanvas"));
-    $("scanCropWrap").hidden = false; $("scanTools").hidden = false; $("scanPrevWrap").hidden = true;
-    try { await qc.load(f); } catch (err) { return toast("Could not open that image"); }
-    $("scanRunBtn").disabled = false;
-    toast("Drag the green corners onto the ingredient list");
-  });
-  function setPhotoVisible(v) {
-    $("scanCropWrap").hidden = !v; $("scanTools").hidden = !v; $("scanEditPhoto").hidden = v || !(qc && qc.src);
-    if (v && qc) { qc.layout(); qc.render(); }
-  }
-  $("scanEditPhoto").addEventListener("click", () => setPhotoVisible(true));
-  $("scanRotL").addEventListener("click", () => qc && qc.rotate(-1));
-  $("scanRotR").addEventListener("click", () => qc && qc.rotate(1));
-  $("scanReset").addEventListener("click", () => qc && qc.resetQuad());
-  $("scanTilt").addEventListener("input", e => { $("scanTiltV").textContent = e.target.value + "°"; qc && qc.setTilt(e.target.value); });
-  $("scanBoost").addEventListener("input", e => { $("scanBoostV").textContent = e.target.value; });
-  const scanOpts = () => ({ filter: $("scanFilter").value, boost: +$("scanBoost").value });
-  $("scanPreview").addEventListener("click", () => {
-    if (!qc || !qc.src) return;
-    const c = prepFor($("scanFilter").value), sm = document.createElement("canvas"), k = Math.min(1, 900 / c.width);
-    sm.width = Math.round(c.width * k); sm.height = Math.round(c.height * k); sm.getContext("2d").drawImage(c, 0, 0, sm.width, sm.height);
-    $("scanPrevImg").src = sm.toDataURL("image/jpeg", 0.8); $("scanPrevWrap").hidden = false;
-  });
-
-  /* vocabulary correction: snap near-miss words to known ingredient words (Levenshtein, conservative) */
-  let vocab = null;
+  /* ----- vocabulary: used to tell an ingredient list from random text ----- */
+  let vocab = null, vocabSet = null;
   function buildVocab() {
     const set = new Set();
-    const add = t => String(t || "").toLowerCase().split(/[^a-z0-9]+/).forEach(w => { if (w.length >= 5) set.add(w); });
-    (window.INGREDIENT_DB || []).forEach(e => { add(e.name); (e.match || []).forEach(add); });
-    "ingredients contains flavor flavors natural artificial preservative preservatives vitamin enriched flour sugar water salt oil palm soybean cornstarch syrup extract powder starch protein concentrate lecithin citric ascorbic acid sodium potassium calcium phosphate sulfate carbonate hydroxide monoglycerides diglycerides distilled vinegar seasoning spices modified wheat niacin riboflavin thiamine folic cellulose gluten dextrose maltodextrin glycerin".split(" ").forEach(add);
-    return [...set];
+    const add = (t, min) => String(t || "").toLowerCase().split(/[^a-z]+/).forEach(w => { if (w.length >= min) set.add(w); });
+    (window.INGREDIENT_DB || []).forEach(e => { add(e.name, 4); (e.match || []).forEach(m => add(m, 4)); });
+    "ingredients contains flavor flavors natural artificial preservative vitamin enriched flour sugar water salt oil palm soybean corn starch syrup extract powder protein concentrate lecithin citric ascorbic acid sodium potassium calcium phosphate sulfate carbonate hydroxide monoglycerides diglycerides vinegar seasoning spices modified wheat niacin riboflavin thiamine folic cellulose gluten dextrose maltodextrin glycerin milk eggs egg soy rice oats butter cream yeast cocoa honey whey nuts peanuts almonds garlic onion pepper tomato lemon juice color colour gum pectin may contain traces less than reduced iron zinc".split(" ").forEach(w => w.length >= 3 && set.add(w));
+    return set;
   }
   function lev(a, b, max) {
     if (Math.abs(a.length - b.length) > max) return max + 1;
@@ -110,23 +84,17 @@
     return prev[b.length];
   }
   function correctWords(text) {
-    if (!vocab) vocab = buildVocab();
-    const known = new Set(vocab);
+    if (!vocabSet) { vocabSet = buildVocab(); vocab = [...vocabSet].filter(w => w.length >= 5); }
     return text.replace(/[A-Za-z]{5,}/g, w => {
-      const lw = w.toLowerCase(); if (known.has(lw)) return w;
-      const max = lw.length >= 9 ? 2 : 1; let best = null, bd = max + 1, tie = false;
-      for (const v of vocab) { const d = lev(lw, v, max); if (d < bd) { bd = d; best = v; tie = false; } else if (d === bd && d <= max) tie = true; }
-      if (!best || tie || bd > max) return w;
-      return w[0] === w[0].toUpperCase() ? best[0].toUpperCase() + best.slice(1) : best;
+      const lw = w.toLowerCase(); if (vocabSet.has(lw)) return w;
+      const max = lw.length >= 9 ? 2 : 1; let bestW = null, bd = max + 1, tie = false;
+      for (const v of vocab) { const d = lev(lw, v, max); if (d < bd) { bd = d; bestW = v; tie = false; } else if (d === bd && d <= max) tie = true; }
+      if (!bestW || tie) return w;
+      return w[0] === w[0].toUpperCase() ? bestW[0].toUpperCase() + bestW.slice(1) : bestW;
     });
   }
 
-  function prepFor(m) {
-    return m === "classic"
-      ? classicPrep(qc.crop({ filter: "original", minLong: 0, maxDim: 2400 }))
-      : qc.crop({ filter: m, boost: +$("scanBoost").value });
-  }
-  /* The ORIGINAL prep: grayscale + contrast, upscale small crops. Same as the first version. */
+  /* The ORIGINAL prep: grayscale + contrast, upscale small crops. */
   function classicPrep(canvas) {
     const scale = canvas.width < 1400 ? 1400 / canvas.width : 1;
     const out = document.createElement("canvas");
@@ -136,41 +104,133 @@
     ctx.drawImage(canvas, 0, 0, out.width, out.height);
     return out;
   }
-  const readCanvas = (canvas, st, bar, lo, hi) => Tesseract.recognize(canvas, "eng", {
-    logger: m => {
-      if (m.status) st.textContent = m.status.replace(/_/g, " ");
-      if (typeof m.progress === "number") setBar(bar, lo + m.progress * (hi - lo));
+
+  /* keep only confident, text-like lines; say whether it looks like an ingredient list */
+  function wordsOf(data) {
+    if (data.words && data.words.length) return data.words;
+    const out = [];
+    (data.blocks || []).forEach(b => (b.paragraphs || []).forEach(p => (p.lines || []).forEach(l => (l.words || []).forEach(w => out.push(w)))));
+    return out;
+  }
+  function filterOCR(data) {
+    if (!vocabSet) { vocabSet = buildVocab(); vocab = [...vocabSet].filter(w => w.length >= 5); }
+    const lines = (data.lines && data.lines.length ? data.lines : [{ words: wordsOf(data), text: data.text }]);
+    const keep = [];
+    lines.forEach(l => {
+      const ws = (l.words || []).filter(w => (w.confidence || 0) >= 62 && /[A-Za-z]{2}/.test(w.text));
+      if (!ws.length) return;
+      const txt = ws.map(w => w.text).join(" ");
+      const letters = (txt.match(/[A-Za-z0-9,()]/g) || []).length / txt.length;
+      const conf = ws.reduce((a, w) => a + w.confidence, 0) / ws.length;
+      if (letters >= 0.8 && conf >= 68 && txt.length >= 4) keep.push(txt);
+    });
+    const text = cleanOCR(keep.join(" "));
+    const toks = text.toLowerCase().split(/[^a-z]+/).filter(w => w.length >= 3);
+    const hits = toks.filter(w => vocabSet.has(w)).length;
+    const hasHeading = /ingredient/i.test(text);
+    const ok = text.length >= 12 && (hasHeading ? hits >= 1 : hits >= 3 && hits / Math.max(1, toks.length) >= 0.25);
+    return { text, ok, hits, total: toks.length };
+  }
+  const wordSet = t => new Set(t.toLowerCase().split(/[^a-z]+/).filter(w => w.length >= 3));
+  const jaccard = (a, b) => { let i = 0; a.forEach(x => b.has(x) && i++); return i / Math.max(1, a.size + b.size - i); };
+
+  /* ----- live camera scanner ----- */
+  const cam = { stream: null, run: false, worker: null, last: "", stable: 0, bestRead: "" };
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const hud = t => ($("camHud").textContent = t);
+
+  async function startCam() {
+    if (!window.Tesseract) return toast("Reader is still loading. Try again in a moment.");
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return toast("Camera is not available here. Use a photo instead.");
+    $("camBox").hidden = false; hud("Starting camera…"); $("camLive").textContent = "";
+    $("camStart").disabled = true;
+    try {
+      cam.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    } catch (e) {
+      $("camBox").hidden = true; $("camStart").disabled = false;
+      return toast("Camera permission was blocked. Allow it in your browser, or use a photo.");
     }
+    const v = $("camVideo"); v.srcObject = cam.stream;
+    await new Promise(r => (v.onloadedmetadata = r)); try { await v.play(); } catch {}
+    $("camView").style.aspectRatio = v.videoWidth + " / " + v.videoHeight;
+    cam.run = true; cam.last = ""; cam.stable = 0; cam.bestRead = ""; scanBusy = true;
+    $("liveCard").classList.add("scanning"); $("liveState").textContent = "Scanning…";
+    $("camBox").scrollIntoView({ behavior: "smooth", block: "start" });
+    camLoop();
+  }
+  function stopCam() {
+    cam.run = false; scanBusy = false;
+    if (cam.stream) cam.stream.getTracks().forEach(t => t.stop()); cam.stream = null;
+    $("camVideo").srcObject = null; $("camBox").hidden = true; $("camStart").disabled = false;
+    $("liveCard").classList.remove("scanning");
+  }
+  function grabFrame() {
+    const v = $("camVideo"), vw = v.videoWidth, vh = v.videoHeight;
+    const sx = vw * 0.04, sy = vh * 0.22, sw = vw * 0.92, sh = vh * 0.56;
+    const c = document.createElement("canvas"), k = Math.min(1, 1800 / sw);
+    c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+    c.getContext("2d").drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    return classicPrep(c);
+  }
+  async function camLoop() {
+    try {
+      hud("Loading reader…");
+      cam.worker = cam.worker || await Tesseract.createWorker("eng");
+      while (cam.run) {
+        hud("Hold steady, reading…");
+        const { data } = await cam.worker.recognize(grabFrame());
+        if (!cam.run) break;
+        const r = filterOCR(data);
+        if (!r.ok) {
+          cam.stable = 0; cam.last = ""; setBar($("scanBar"), 6);
+          $("scanStatus").textContent = "Looking for an ingredient list…";
+          $("camLive").textContent = ""; hud("Fit the ingredient list inside the frame");
+          await sleep(250); continue;
+        }
+        const same = cam.last && jaccard(wordSet(r.text), wordSet(cam.last)) >= 0.75;
+        cam.stable = same ? cam.stable + 1 : 0; cam.last = r.text;
+        if (r.text.length >= cam.bestRead.length * 0.8 || !same) cam.bestRead = r.text;
+        $("camLive").textContent = r.text.length > 220 ? r.text.slice(0, 217) + "…" : r.text;
+        setBar($("scanBar"), Math.min(100, 30 + cam.stable * 35));
+        $("scanStatus").textContent = cam.stable ? "Text is steady… " + Math.min(100, Math.round(cam.stable * 50)) + "%" : "Ingredient text found";
+        hud(cam.stable ? "Almost locked" : "Ingredient list detected");
+        if (cam.stable >= 2) return lockScan(cam.bestRead || r.text);
+        await sleep(150);
+      }
+    } catch (err) { console.error(err); toast("Scanner problem. Try again or use a photo."); stopCam(); }
+  }
+  function lockScan(text) {
+    if (navigator.vibrate) navigator.vibrate(60);
+    setBar($("scanBar"), 100); stopCam();
+    const out = correctWords(text);
+    liveReveal = true; $("ingText").value = out; $("ingText").dispatchEvent(new Event("input"));
+    toast("Locked. Check the live scan, then Analyze");
+    $("liveCard").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  $("camStart").addEventListener("click", startCam);
+  $("camStop").addEventListener("click", stopCam);
+  $("camCapture").addEventListener("click", () => {
+    if (cam.bestRead) lockScan(cam.bestRead); else toast("Nothing readable yet. Move closer to the ingredient list.");
   });
 
-  $("scanRunBtn").addEventListener("click", async () => {
-    if (!qc || !qc.src || scanBusy) return;
-    if (!window.Tesseract) return toast("OCR engine failed to load. Check your connection.");
-    scanBusy = true; const btn = $("scanRunBtn"); btn.disabled = true;
-    const prog = $("scanProgress"), bar = $("scanBar"), st = $("scanStatus");
-    anim.cur = 0; anim.tgt = 0; prog.hidden = false; prog.classList.add("scanning"); $("liveCard").classList.add("scanning"); $("liveState").textContent = "Reading…"; bar.style.width = "0%";
-    st.textContent = "Preparing image…"; setBar(bar, 5);
+  /* photo fallback: same reader and the same filter, no editing screens */
+  $("scanFile").addEventListener("change", async e => {
+    const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+    if (!window.Tesseract) return toast("Reader is still loading. Try again in a moment.");
+    $("liveState").textContent = "Reading photo…"; $("liveCard").classList.add("scanning");
     try {
-      await new Promise(r => setTimeout(r, 30));
-      const mode = $("scanFilter").value, hard = $("scanHard").checked;
-      const prep = prepFor;
-      let { data } = await readCanvas(prep(mode), st, bar, 8, hard ? 55 : 98);
-      if (hard) {
-        st.textContent = "Second look…";
-        const alt = await readCanvas(prep(mode === "adaptive" ? "classic" : "adaptive"), st, bar, 55, 96);
-        if (alt.data.confidence > data.confidence) data = alt.data;
-      }
-      let text = cleanOCR(data.text);
-      if (hard) text = correctWords(text);
-      liveReveal = true; $("ingText").value = text; $("ingText").dispatchEvent(new Event("input"));
-      if (text) { setPhotoVisible(false); $("liveCard").scrollIntoView({ behavior: "smooth", block: "start" }); }
-      setBar(bar, 100);
-      toast(text ? "Text read. Check it, then Analyze" : "No text found. Tighten the corners or try a different filter.");
-    } catch (err) {
-      console.error(err); toast("Could not read the image");
-    } finally {
-      scanBusy = false; btn.disabled = false; prog.classList.remove("scanning"); $("liveCard").classList.remove("scanning"); setTimeout(() => { prog.hidden = true; bar.style.width = "0%"; }, 900);
-    }
+      let bmp; try { bmp = await createImageBitmap(f, { imageOrientation: "from-image" }); }
+      catch { bmp = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = URL.createObjectURL(f); }); }
+      const w = bmp.width || bmp.naturalWidth, h = bmp.height || bmp.naturalHeight, k = Math.min(1, 2400 / Math.max(w, h));
+      const c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(h * k);
+      c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+      cam.worker = cam.worker || await Tesseract.createWorker("eng");
+      const { data } = await cam.worker.recognize(classicPrep(c));
+      const r = filterOCR(data);
+      if (!r.ok) { $("liveState").textContent = "No ingredient list found"; return toast("No ingredient list found in that photo. Try the live scanner and fit the list in the frame."); }
+      lockScan(r.text);
+    } catch (err) { console.error(err); toast("Could not read that photo"); }
+    finally { $("liveCard").classList.remove("scanning"); }
   });
 
   function cleanOCR(t) {

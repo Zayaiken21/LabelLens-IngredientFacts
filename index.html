@@ -43,34 +43,26 @@
   <section id="tab-scan" class="panel active">
     <div class="card">
       <h2>Scan an ingredient label</h2>
-      <p class="muted">Take or upload a photo of the back of the package. The text is read right on your device, nothing is uploaded.</p>
+      <p class="muted">Point the camera at the ingredient list and hold steady. It reads live inside the frame and locks on when the text stops changing. Everything stays on your device.</p>
       <div class="row">
-        <label class="btn primary">📸 Take / choose photo
-          <input type="file" id="scanFile" accept="image/*" capture="environment" hidden>
+        <button class="btn primary" id="camStart">📷 Start scanner</button>
+        <label class="btn">🖼 Use a photo
+          <input type="file" id="scanFile" accept="image/*" hidden>
         </label>
-        <button class="btn" id="scanRunBtn" disabled>🔍 Read text</button>
-        <button class="btn" id="scanEditPhoto" hidden>📷 Show photo / adjust crop</button>
       </div>
-      <div id="scanCropWrap" class="cropwrap" hidden>
-        <canvas id="scanCanvas"></canvas>
-      </div>
-      <div id="scanTools" class="tools" hidden>
-        <p class="muted small">Drag any of the 4 corners to fit the label. Drag inside to move the box. Corners work on slanted or curved photos too.</p>
-        <div class="row">
-          <button class="btn" id="scanRotL" aria-label="Rotate left">⟲</button>
-          <button class="btn" id="scanRotR" aria-label="Rotate right">⟳</button>
-          <button class="btn" id="scanReset">Reset box</button>
-          <button class="btn" id="scanPreview">👁 Preview</button>
+      <div id="camBox" class="camera" hidden>
+        <div class="camview" id="camView">
+          <video id="camVideo" playsinline muted autoplay></video>
+          <div class="guide" id="camGuide"><i></i><i></i><i></i><i></i><span class="beam"></span></div>
+          <div class="camhud" id="camHud">Starting camera…</div>
         </div>
-        <label class="slider">Straighten <input type="range" id="scanTilt" min="-15" max="15" step="0.5" value="0"><b id="scanTiltV">0°</b></label>
-        <label class="slider">Boost <input type="range" id="scanBoost" min="0" max="100" step="5" value="0"><b id="scanBoostV">0</b></label>
-        <label class="slider">Filter
-          <select id="scanFilter"><option value="classic" selected>Classic (original, best for most)</option><option value="auto">Auto contrast</option><option value="adaptive">Shiny / uneven light</option><option value="original">Original colors</option><option value="invert">Invert (light on dark)</option></select>
-        </label>
-        <label class="slider"><input type="checkbox" id="scanHard"> Try harder (second pass + fix near-miss words)</label>
-        <div id="scanPrevWrap" class="checker" hidden><img id="scanPrevImg" alt="What the scanner will read"></div>
+        <div id="scanProgress" class="progress thick"><div id="scanBar"></div><span id="scanStatus">Starting…</span></div>
+        <div class="camlive" id="camLive"></div>
+        <div class="row">
+          <button class="btn primary" id="camCapture">🔒 Lock now</button>
+          <button class="btn" id="camStop">Stop</button>
+        </div>
       </div>
-      <div id="scanProgress" class="progress" hidden><div id="scanBar"></div><span id="scanStatus">Starting…</span></div>
     </div>
 
     <div class="card livecard" id="liveCard">
