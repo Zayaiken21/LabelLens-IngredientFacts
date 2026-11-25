@@ -49,6 +49,7 @@
           <input type="file" id="scanFile" accept="image/*" capture="environment" hidden>
         </label>
         <button class="btn" id="scanRunBtn" disabled>🔍 Read text</button>
+        <button class="btn" id="scanEditPhoto" hidden>📷 Show photo / adjust crop</button>
       </div>
       <div id="scanCropWrap" class="cropwrap" hidden>
         <canvas id="scanCanvas"></canvas>
@@ -72,11 +73,17 @@
       <div id="scanProgress" class="progress" hidden><div id="scanBar"></div><span id="scanStatus">Starting…</span></div>
     </div>
 
+    <div class="card livecard" id="liveCard">
+      <div class="livetop"><h2>Live scan</h2><span class="livestate" id="liveState">Waiting for text</span></div>
+      <div class="scanline" id="scanLine"></div>
+      <div id="liveText" class="highlight livetext"><p class="muted">Read a photo or paste a list below. Each ingredient lights up here: red to avoid, yellow to watch, green good. Hover or tap a word for the reason.</p></div>
+      <div id="liveScan" class="livescan"></div>
+    </div>
+
     <div class="card">
       <h2>Ingredients text</h2>
       <p class="muted">Scanned text lands here. Fix any typos, or just paste a list yourself.</p>
       <textarea id="ingText" rows="6" placeholder="Paste or scan ingredients, e.g. Enriched flour, sugar, palm oil, red 40, natural flavors…"></textarea>
-      <div id="liveScan" class="livescan"></div>
       <div class="row">
         <button class="btn primary" id="analyzeBtn">Analyze ingredients</button>
         <button class="btn" id="pasteBtn">📋 Paste</button>
@@ -91,25 +98,32 @@
     <div id="resultsBody" hidden>
       <div class="card scorecard">
         <div class="ring" id="scoreRing"><span id="scoreNum">–</span></div>
-        <div>
+        <div class="scoretext">
+          <small class="muted">LabelLens score</small>
           <h2 id="scoreLabel">Score</h2>
-          <p class="muted" id="scoreSub"></p>
+          <p id="scoreSub" class="muted"></p>
         </div>
+      </div>
+      <div class="statgrid" id="statGrid"></div>
+      <div class="card" id="topConcerns" hidden>
+        <h2>What to look at first</h2>
+        <div id="topList"></div>
       </div>
 
       <div class="card">
-        <h2>Your label, color coded</h2>
-        <p class="muted small"><span class="key red">Red</span> avoid <span class="key yellow">Yellow</span> caution <span class="key green">Green</span> good <span class="key plain">Gray</span> not listed</p>
+        <h2>Your label, ingredient by ingredient</h2>
+        <p class="muted small legend"><span class="key red">Red</span> avoid · <span class="key yellow">Yellow</span> watch · <span class="key green">Green</span> good · <span class="key plain">Gray</span> neutral or not in our list yet</p>
         <div id="highlightBox" class="highlight"></div>
+        <p class="muted small">Hover or tap any word to see what it is and why it is colored that way.</p>
       </div>
 
       <div class="filters">
-        <button class="filter red active" data-f="red">🔴 Avoid <b id="redN">0</b></button>
-        <button class="filter yellow" data-f="yellow">🟡 Caution <b id="yellowN">0</b></button>
+        <button class="filter red active" data-f="red">🔴 To avoid <b id="redN">0</b></button>
+        <button class="filter yellow" data-f="yellow">🟡 To watch <b id="yellowN">0</b></button>
         <button class="filter green" data-f="good">🟢 Good <b id="goodN">0</b></button>
         <button class="filter" data-f="all">All <b id="allN">0</b></button>
       </div>
-      <p class="muted small">Tap any ingredient to see why, and how regulators around the world see it.</p>
+      <p class="muted small">Open a group to see why each ingredient is flagged and how regulators around the world treat it.</p>
       <div id="chipList" class="chips"></div>
 
       <details class="card" id="otherBox">

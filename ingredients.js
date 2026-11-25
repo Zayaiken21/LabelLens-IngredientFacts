@@ -273,7 +273,7 @@ window.IngredientEngine = {
     const redList = watchList.filter(w => w.entry.color === "red");
     const yellowList = watchList.filter(w => w.entry.color === "yellow");
     const goodList = [...good.values()];
-    let score = 70;
+    let score = 85;
     watchList.forEach(w => score -= w.entry.level * 6);
     goodList.forEach(() => score += 4);
     score = Math.max(0, Math.min(100, Math.round(score)));

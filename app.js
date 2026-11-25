@@ -69,6 +69,11 @@
     $("scanRunBtn").disabled = false;
     toast("Drag the green corners onto the ingredient list");
   });
+  function setPhotoVisible(v) {
+    $("scanCropWrap").hidden = !v; $("scanTools").hidden = !v; $("scanEditPhoto").hidden = v || !(qc && qc.src);
+    if (v && qc) { qc.layout(); qc.render(); }
+  }
+  $("scanEditPhoto").addEventListener("click", () => setPhotoVisible(true));
   $("scanRotL").addEventListener("click", () => qc && qc.rotate(-1));
   $("scanRotR").addEventListener("click", () => qc && qc.rotate(1));
   $("scanReset").addEventListener("click", () => qc && qc.resetQuad());
@@ -143,7 +148,7 @@
     if (!window.Tesseract) return toast("OCR engine failed to load. Check your connection.");
     scanBusy = true; const btn = $("scanRunBtn"); btn.disabled = true;
     const prog = $("scanProgress"), bar = $("scanBar"), st = $("scanStatus");
-    anim.cur = 0; anim.tgt = 0; prog.hidden = false; prog.classList.add("scanning"); bar.style.width = "0%";
+    anim.cur = 0; anim.tgt = 0; prog.hidden = false; prog.classList.add("scanning"); $("liveCard").classList.add("scanning"); $("liveState").textContent = "Reading…"; bar.style.width = "0%";
     st.textContent = "Preparing image…"; setBar(bar, 5);
     try {
       await new Promise(r => setTimeout(r, 30));
@@ -157,14 +162,14 @@
       }
       let text = cleanOCR(data.text);
       if (hard) text = correctWords(text);
-      $("ingText").value = text; $("ingText").dispatchEvent(new Event("input"));
+      liveReveal = true; $("ingText").value = text; $("ingText").dispatchEvent(new Event("input"));
+      if (text) { setPhotoVisible(false); $("liveCard").scrollIntoView({ behavior: "smooth", block: "start" }); }
       setBar(bar, 100);
       toast(text ? "Text read. Check it, then Analyze" : "No text found. Tighten the corners or try a different filter.");
-      $("ingText").scrollIntoView({ behavior: "smooth", block: "center" });
     } catch (err) {
       console.error(err); toast("Could not read the image");
     } finally {
-      scanBusy = false; btn.disabled = false; prog.classList.remove("scanning"); setTimeout(() => { prog.hidden = true; bar.style.width = "0%"; }, 900);
+      scanBusy = false; btn.disabled = false; prog.classList.remove("scanning"); $("liveCard").classList.remove("scanning"); setTimeout(() => { prog.hidden = true; bar.style.width = "0%"; }, 900);
     }
   });
 
@@ -199,23 +204,42 @@
     showTab("results");
   }
 
-  function scoreInfo(s) {
-    if (s >= 75) return { c: "var(--good)", l: "Looks pretty clean", sub: "Few or no flagged ingredients." };
-    if (s >= 50) return { c: "var(--warn)", l: "Mixed bag", sub: "Some ingredients are worth a closer look." };
-    return { c: "var(--bad)", l: "Lots to watch", sub: "Several flagged ingredients. Check the reasons below." };
+  function scoreInfo(cur) {
+    const r = cur.redList.length, y = cur.yellowList.length, g = cur.goodList.length, n = cur.tokens.length, s = cur.score;
+    const plural = (k, w) => k + " " + w + (k === 1 ? "" : "s");
+    if (!r && !y) return { c: "var(--good)", l: g ? "Clean label" : "Nothing flagged",
+      sub: `We checked ${plural(n, "ingredient")} and none are on our watch list${g ? `. ${plural(g, "good ingredient")} stood out` : ""}. Ingredients we do not know yet stay gray.` };
+    if (s >= 70) return { c: "var(--good)", l: "Mostly fine", sub: `${plural(r + y, "ingredient")} worth a look out of ${n}, none serious. Details are below.` };
+    if (s >= 45) return { c: "var(--warn)", l: "Some things to watch", sub: `${r ? plural(r, "ingredient") + " to avoid and " : ""}${y + " to watch"} out of ${n}. Open each one below to see why.` };
+    return { c: "var(--bad)", l: "Heavily flagged", sub: `${plural(r, "ingredient")} to avoid and ${y + " to watch"} out of ${n}. This looks like a highly processed product.` };
+  }
+  const firstSentence = t => { const m = String(t || "").match(/^.*?[.!?](\s|$)/); return (m ? m[0] : t || "").trim(); };
+
+  function renderStats() {
+    const c = current, n = c.tokens.length;
+    const cells = [["red", c.redList.length, "To avoid"], ["yellow", c.yellowList.length, "To watch"], ["green", c.goodList.length, "Good"], ["gray", Math.max(0, n - c.watchList.length - c.goodList.length), "Neutral / unknown"]];
+    $("statGrid").innerHTML = cells.map(([k, v, l]) => `<div class="stat ${k}"><b>${v}</b><span>${l}</span></div>`).join("");
+    const top = c.redList.concat(c.yellowList).slice(0, 3), box = $("topConcerns");
+    box.hidden = !top.length; $("topList").innerHTML = "";
+    top.forEach(x => {
+      const b = document.createElement("button"); b.className = "toprow " + x.entry.color;
+      b.innerHTML = `<span class="dotc"></span><span><b>${esc(x.entry.name)}</b><small>${esc(firstSentence(x.entry.reason))}</small></span><i>›</i>`;
+      b.addEventListener("click", () => openReason(x)); $("topList").appendChild(b);
+    });
   }
 
   function renderResults() {
     $("emptyResults").hidden = true; $("resultsBody").hidden = false;
-    const s = scoreInfo(current.score);
+    const s = scoreInfo(current);
     const ring = $("scoreRing");
     ring.style.setProperty("--p", current.score); ring.style.setProperty("--c", s.c);
     $("scoreNum").textContent = current.score;
-    $("scoreLabel").textContent = s.l; $("scoreSub").textContent = s.sub + " (This is a simple estimate, not a medical rating.)";
+    $("scoreLabel").textContent = s.l; $("scoreSub").textContent = s.sub;
     $("redN").textContent = current.redList.length;
     $("yellowN").textContent = current.yellowList.length;
     $("goodN").textContent = current.goodList.length;
     $("allN").textContent = current.watchList.length + current.goodList.length;
+    renderStats();
     renderHighlight();
     $("otherN").textContent = current.unmatched.length;
     const ol = $("otherList"); ol.innerHTML = "";
@@ -271,15 +295,16 @@
   }
   document.addEventListener("scroll", hideTip, true);
 
-  /* the whole label, color coded; every word is hoverable */
-  function renderHighlight() {
-    const box = $("highlightBox"); box.innerHTML = "";
-    E.highlight(current.text).forEach(p => {
+  /* color-coded, word-hoverable text (used by Results and the Live scan) */
+  function fillHL(box, text, reveal) {
+    box.innerHTML = ""; let n = 0;
+    E.highlight(text).forEach(p => {
       const b = document.createElement("button");
       b.className = "hl " + p.color;
       p.text.split(/(\s+)/).forEach(w => {
         if (!w.trim()) { b.appendChild(document.createTextNode(w)); return; }
         const sp = document.createElement("span"); sp.className = "w"; sp.textContent = w;
+        if (reveal) { sp.classList.add("rv"); sp.style.setProperty("--i", Math.min(n++, 90)); }
         const clean = w.replace(/[^A-Za-z0-9\- ]/g, "");
         if (clean.length >= 3) bindTip(sp, clean, p.text);
         b.appendChild(sp);
@@ -289,20 +314,23 @@
       box.appendChild(b);
     });
   }
+  function renderHighlight() { fillHL($("highlightBox"), current.text); }
 
   /* live scanner under the text box: flags known ingredients as you type or scan */
-  let liveT = 0;
+  let liveT = 0, liveReveal = false;
   function liveScan() {
-    const box = $("liveScan"), txt = $("ingText").value.trim();
-    if (!txt) { box.innerHTML = ""; return; }
+    const box = $("liveScan"), txt = $("ingText").value.trim(), lt = $("liveText"), st = $("liveState");
+    if (!txt) { box.innerHTML = ""; lt.innerHTML = '<p class="muted">Read a photo or paste a list below. Each ingredient lights up here: red to avoid, yellow to watch, green good. Hover or tap a word for the reason.</p>'; st.textContent = "Waiting for text"; return; }
+    fillHL(lt, txt, liveReveal); liveReveal = false;
     const pieces = E.highlight(txt), cnt = { red: 0, yellow: 0, green: 0 };
     const seen = new Set(), chips = [];
     pieces.forEach(p => {
-      if (!(p.color in cnt)) return; cnt[p.color]++;
-      const hit = best(p.text); if (!hit || seen.has(hit.name)) return; seen.add(hit.name); chips.push({ p, hit });
+      if (p.color in cnt) cnt[p.color]++;
+      const hit = p.color in cnt ? best(p.text) : null; if (!hit || seen.has(hit.name)) return; seen.add(hit.name); chips.push({ p, hit });
     });
     chips.sort((a, c) => RANK[c.hit.color] - RANK[a.hit.color]);
-    box.innerHTML = `<div class="livehead"><b>Live scan</b> <span>🔴 ${cnt.red}</span> <span>🟡 ${cnt.yellow}</span> <span>🟢 ${cnt.green}</span> <small class="muted">${pieces.length} items. Hover or tap a flag.</small></div>`;
+    st.textContent = `${pieces.length} ingredients · ${cnt.red} avoid · ${cnt.yellow} watch · ${cnt.green} good`;
+    box.innerHTML = chips.length ? '<p class="muted small">Flagged in this list:</p>' : '<p class="muted small">Nothing in our list was flagged.</p>';
     const row = document.createElement("div"); row.className = "chips";
     chips.slice(0, 40).forEach(({ p, hit }) => {
       const b = document.createElement("button"); b.className = "chip " + hit.color;
@@ -317,7 +345,7 @@
   setTimeout(liveScan, 0);
 
   const dotFor = e => e.allergen ? "⚠️ " : ({ green: "🟢 ", red: "🔴 ", yellow: "🟡 ", neutral: "⚪ " }[e.color] || "");
-  const EMPTY_MSG = { red: "🎉 Nothing in the red.", yellow: "Nothing in the yellow.", good: "No standout healthy ingredients found.", all: "Nothing flagged." };
+  const EMPTY_MSG = { red: "🎉 Nothing to avoid in this list.", yellow: "Nothing to watch in this list.", good: "No standout healthy ingredients recognized.", all: "Nothing flagged in our list." };
   function renderChips() {
     document.querySelectorAll("#tab-results .filter").forEach(b => b.classList.toggle("active", b.dataset.f === filter));
     const list = $("chipList"); list.innerHTML = "";
