@@ -152,7 +152,9 @@
   /* ----- online match (Open Food Facts) ----- */
   let online = null;
   const findMsg = t => { $("findMsg").textContent = t || ""; };
-  const online_err = e => e && e.search ? "Name search is unavailable right now (the free service limits it). Scan or type the barcode instead, that is more reliable. Your scan still works." : e && e.cool ? `The online database asked us to slow down. Try again in ${e.cool}s. Your scan still works.` :
+  const online_err = e => e && e.keyBad ? "That USDA key was rejected. Clear the key box to use the shared demo key, or paste a valid free key." :
+    e && (e.budget || (e.busy && e.fdc)) ? "The free USDA lookup limit was reached for now. Get a free key at fdc.nal.usda.gov/api-key-signup, paste it in the USDA key box for 1,000 searches an hour, or scan the barcode. Your scan still works." :
+    e && e.search ? "Name search is unavailable right now (the free service limits it). Scan or type the barcode instead, that is more reliable. Your scan still works." : e && e.cool ? `The online database asked us to slow down. Try again in ${e.cool}s. Your scan still works.` :
     e && e.busy ? "The online database is busy right now. Your scan still works, try again in a minute." :
     e && e.message === "bad code" ? "That does not look like a barcode (8 to 14 digits)." :
     e && e.message === "short" ? "Type at least 3 letters." : "Could not reach the online database" + (e && e.detail ? " (" + e.detail + ")" : "") + ". Check your connection, then try again. Your scan still works.";
@@ -162,7 +164,7 @@
     const cmp = cmpNow(), nut = LLOnline.toNutrition(p), badge = !cmp ? ["none", "Product found"] : cmp.verdict === "exact" ? ["exact", "Exact match " + cmp.score + "%"] : cmp.verdict === "close" ? ["close", "Close match " + cmp.score + "%"] : ["diff", "Different product " + cmp.score + "%"];
     box.innerHTML = `<div class="onl ${badge[0]}">
       ${p.img ? `<img src="${esc(p.img)}" alt="" loading="lazy">` : ""}
-      <div class="onlmeta"><b>${esc(p.name)}</b><small>${esc([p.brand, p.qty].filter(Boolean).join(" · "))}</small><span class="onlbadge">${esc(badge[1])}</span></div></div>
+      <div class="onlmeta"><b>${esc(p.name)}</b><small>${esc([p.brand, p.qty, p.src].filter(Boolean).join(" · "))}</small><span class="onlbadge">${esc(badge[1])}</span></div></div>
       ${cmp ? `<p class="small">${cmp.matched} of ${cmp.scanCount} scanned ingredients match the online list (${cmp.onlineCount} online).${cmp.unmatched.length ? ` Not found online: <b>${esc(cmp.unmatched.slice(0, 5).join(", "))}</b>.` : ""}${cmp.missing.length ? ` Online but not scanned: ${esc(cmp.missing.slice(0, 4).join(", "))}.` : ""}</p>` : (p.ing ? '<p class="small muted">Scan or paste the ingredient list to compare it with this product.</p>' : '<p class="small muted">This product has no ingredient list online.</p>')}
       <div class="row">
         ${cmp && cmp.corrected !== $("ingText").value ? '<button class="btn primary" id="onlUseFixed">✔ Use verified list</button>' : ""}
@@ -190,7 +192,7 @@
   $("findCode").addEventListener("keydown", e => { if (e.key === "Enter") $("findCodeBtn").click(); });
   $("findNameBtn").addEventListener("click", () => guard($("findNameBtn"), async () => {
     findMsg("Searching… (name search is rate limited, so it can take a few seconds)");
-    let list; try { list = await LLOnline.byName($("findName").value); }
+    let list; try { list = await LLOnline.search($("findName").value); }
     catch (e) { if (e && (e.cool || e.busy || e.message === "short")) throw e; throw Object.assign(new Error("search"), { search: true }); }
     const scan = $("ingText").value.trim();
     list.forEach(p => { const c = scan && p.ing ? LLOnline.compare(scan, p.ing) : null; p._score = c ? c.score : -1; });
@@ -199,10 +201,12 @@
     findMsg(list.length ? (scan ? "Best matches first, ranked by how well their ingredients match your scan:" : "Pick a product:") : "Nothing found. Try fewer words or the barcode.");
     list.forEach(p => {
       const b = document.createElement("button"); b.className = "toprow";
-      b.innerHTML = `<span><b>${esc(p.name)}</b><small>${esc(p.brand || "")}${p._score >= 0 ? " · ingredients " + p._score + "% match" : ""}</small></span><i>›</i>`;
+      b.innerHTML = `<span><b>${esc(p.name)}</b><small>${esc([p.brand, p.serving].filter(Boolean).join(" · "))}${p._score >= 0 ? " · ingredients " + p._score + "% match" : ""} · ${esc(p.src || "")}</small></span><i>›</i>`;
       b.addEventListener("click", () => showOnline(p, true)); box.appendChild(b);
     });
   }));
+  try { $("fdcKey").value = localStorage.getItem("ll_fdc_key") || ""; } catch {}
+  $("fdcKey").addEventListener("change", () => { try { localStorage.setItem("ll_fdc_key", $("fdcKey").value.trim()); } catch {} toast($("fdcKey").value.trim() ? "USDA key saved on this device" : "Using the shared demo key"); });
   $("findName").addEventListener("keydown", e => { if (e.key === "Enter") $("findNameBtn").click(); });
 
   /* ----- barcode reading while the camera runs ----- */

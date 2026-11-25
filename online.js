@@ -3,9 +3,9 @@
    Built to stay inside the service's limits: cache, queue with spacing, timeouts, cooldown after errors. */
 (() => {
   const OFF = "https://world.openfoodfacts.org";
-  const GAP = { product: 6500, search: 9000 };        // service allows ~15 product reads/min and 10 searches/min per IP
+  const GAP = { product: 6500, search: 9000, fdc: 1500 };        // service allows ~15 product reads/min and 10 searches/min per IP
   const TTL = 14 * 864e5, MAXC = 40;
-  const mem = { last: { product: 0, search: 0 }, cool: 0, inflight: new Map(), chain: Promise.resolve() };
+  const mem = { last: { product: 0, search: 0, fdc: 0 }, cool: 0, coolF: 0, inflight: new Map(), chain: Promise.resolve() };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   /* ---------- cache ---------- */
@@ -19,17 +19,19 @@
     const hit = cget(key); if (hit) return hit.v;
     if (mem.inflight.has(key)) return mem.inflight.get(key);
     const run = mem.chain.then(async () => {
-      if (Date.now() < mem.cool) throw Object.assign(new Error("cooldown"), { cool: Math.ceil((mem.cool - Date.now()) / 1000) });
+      const ck = kind === "fdc" ? "coolF" : "cool";
+      if (Date.now() < mem[ck]) throw Object.assign(new Error("cooldown"), { cool: Math.ceil((mem[ck] - Date.now()) / 1000), fdc: kind === "fdc" });
       const wait = mem.last[kind] + GAP[kind] - Date.now(); if (wait > 0) await sleep(wait);
       mem.last[kind] = Date.now();
       const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 9000);
       try {
         const res = await fetch(url, { signal: ctl.signal, headers: { Accept: "application/json" } });
         if (res.status === 404) { cput(key, null); return null; }
-        if (res.status === 429 || res.status === 503 || res.status >= 500) { mem.cool = Date.now() + 90000; throw Object.assign(new Error("busy"), { busy: true }); }
+        if (kind === "fdc" && (res.status === 401 || res.status === 403)) throw Object.assign(new Error("key"), { detail: "the USDA key was rejected", keyBad: true });
+        if (res.status === 429 || res.status === 503 || res.status >= 500) { mem[ck] = Date.now() + (kind === "fdc" ? 600000 : 90000); throw Object.assign(new Error("busy"), { busy: true, fdc: kind === "fdc" }); }
         if (!res.ok) throw Object.assign(new Error("http"), { detail: "HTTP " + res.status });
         const json = await res.json(); cput(key, json); return json;
-      } catch (e) { if (e instanceof TypeError) e.detail = "the browser could not connect (offline, or the service blocked the request)"; if (e.name === "AbortError") { mem.cool = Date.now() + 20000; throw Object.assign(new Error("timeout"), { busy: true }); } throw e; }
+      } catch (e) { if (e instanceof TypeError) e.detail = "the browser could not connect (offline, or the service blocked the request)"; if (e.name === "AbortError") { mem[ck] = Date.now() + 20000; throw Object.assign(new Error("timeout"), { busy: true }); } throw e; }
       finally { clearTimeout(to); }
     });
     mem.chain = run.catch(() => {});
@@ -52,9 +54,59 @@
     const hits = j ? (j.products || j.hits || []) : [];
     return hits.map(normalize).filter(p => p.name);
   }
+  /* ---------- USDA FoodData Central (US branded foods, generic foods and drinks) ---------- */
+  const FDC = "https://api.nal.usda.gov/fdc/v1";
+  const fdcKey = () => { try { return (localStorage.getItem("ll_fdc_key") || "").trim() || "DEMO_KEY"; } catch { return "DEMO_KEY"; } };
+  function fdcBudget() {                               // stay under the hourly cap: 30 (demo key) or 1000 (own key)
+    const cap = fdcKey() === "DEMO_KEY" ? 24 : 900, now = Date.now();
+    let l = []; try { l = JSON.parse(localStorage.getItem("ll_fdc_calls") || "[]").filter(x => now - x < 3600e3); } catch {}
+    if (l.length >= cap) throw Object.assign(new Error("budget"), { busy: true, fdc: true, budget: true });
+    l.push(now); try { localStorage.setItem("ll_fdc_calls", JSON.stringify(l)); } catch {}
+  }
+  const NUT_MAP = [["208", "energy-kcal", "KCAL"], ["204", "fat"], ["606", "saturated-fat"], ["605", "trans-fat"], ["601", "cholesterol"], ["307", "sodium"], ["205", "carbohydrates"], ["291", "fiber"],
+    ["269", "sugars"], ["539", "added-sugars"], ["203", "proteins"], ["306", "potassium"], ["301", "calcium"], ["303", "iron"], ["328", "vitamin-d"], ["262", "caffeine"]];
+  const UNIT = { G: 1, MG: 1e-3, UG: 1e-6, "µG": 1e-6, KCAL: 1 };
+  function fromFDC(f) {
+    const n = {};
+    (f.foodNutrients || []).forEach(x => {
+      const num = String(x.nutrientNumber || ""), unit = String(x.unitName || "").toUpperCase(), v = +x.value; if (isNaN(v)) return;
+      const m = NUT_MAP.find(r => num === r[0] || (r[0] === "269" && num.startsWith("269")));
+      if (!m || (m[2] && unit !== m[2]) || (!(unit in UNIT))) return;
+      if (n[m[1] + "_100g"] != null && m[0] === "269" && num !== "269.3") return;
+      n[m[1] + "_100g"] = m[2] ? v : v * UNIT[unit];
+    });
+    const ss = +f.servingSize || 0, su = String(f.servingSizeUnit || "").toLowerCase(), servingG = ss && (su === "g" || su === "ml" || su === "grm" || su === "mlt") ? ss : 0;
+    if (servingG) Object.keys(n).slice().forEach(k => { n[k.replace("_100g", "_serving")] = n[k] * servingG / 100; });
+    const title = String(f.description || "").toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
+    return { code: f.gtinUpc || "", name: title, brand: f.brandName || f.brandOwner || "", qty: "", ing: f.ingredients || "", src: "USDA",
+      serving: f.householdServingFullText ? `${f.householdServingFullText}${servingG ? " (" + servingG + " " + su + ")" : ""}` : (servingG ? servingG + " " + su : ""),
+      servingG, nutr: n, img: "", dataType: f.dataType };
+  }
+  async function byNameFDC(q) {
+    fdcBudget();
+    const key = fdcKey(), url = `${FDC}/foods/search?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(q)}&dataType=Branded,Foundation,SR%20Legacy&pageSize=12&requireAllWords=false`;
+    const j = await polite("fdc", url, "f:" + q);           // cache key excludes the API key on purpose
+    return (j && j.foods ? j.foods : []).map(fromFDC).filter(p => p.name);
+  }
+  const words = s => String(s).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  function rank(list, q) {                              // all query words present in name+brand first, then shorter names (closer to what was typed)
+    const qw = words(q);
+    const sc = p => { const hay = words(p.name + " " + p.brand); const all = qw.every(w => hay.some(h => h === w || h.startsWith(w) || w.startsWith(h) && h.length > 3)); return (all ? 0 : 1000) + p.name.length; };
+    return list.slice().sort((a, b) => sc(a) - sc(b));
+  }
+  /* name search: USDA first, Open Food Facts as backup/extra (world products). Either can fail without breaking the other. */
+  async function search(q) {
+    q = String(q || "").trim().replace(/[^\p{L}\p{N}\s'&.-]/gu, " ").replace(/\s+/g, " ").slice(0, 80); if (q.length < 3) throw new Error("short");
+    let out = [], err = null;
+    try { out = await byNameFDC(q); } catch (e) { err = e; }
+    if (out.length < 3) { try { out = out.concat(await byName(q)); } catch (e) { err = err || e; } }
+    const seen = new Set(); out = out.filter(p => { const k = (p.code || "") + "|" + p.name.toLowerCase() + "|" + p.brand.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+    if (!out.length && err) throw err;
+    return rank(out, q).slice(0, 10);
+  }
   function normalize(p) {
     return { code: p.code, name: p.product_name || "", brand: (p.brands || "").split(",")[0], qty: p.quantity || "", ing: p.ingredients_text_en || p.ingredients_text || "",
-      serving: p.serving_size || "", servingG: +p.serving_quantity || 0, nutr: p.nutriments || {}, img: p.image_front_small_url || "", nova: p.nova_group, nutri: p.nutriscore_grade };
+      serving: p.serving_size || "", servingG: +p.serving_quantity || 0, nutr: p.nutriments || {}, img: p.image_front_small_url || "", nova: p.nova_group, nutri: p.nutriscore_grade, src: "Open Food Facts" };
   }
 
   /* ---------- nutrition conversion (only fields the product really has) ---------- */
@@ -106,5 +158,5 @@
     return { matched, scanCount: S.length, onlineCount: O.length, unmatched, missing, score, corrected: fixed.join(", "),
       verdict: precision >= 0.9 && coverage >= 0.85 ? "exact" : precision >= 0.6 && coverage >= 0.5 ? "close" : "different" };
   }
-  window.LLOnline = { byBarcode, byName, toNutrition, compare, validCode, ean13ok, normalizeKey: key };
+  window.LLOnline = { byBarcode, byName, search, fromFDC, rank, toNutrition, compare, validCode, ean13ok, normalizeKey: key };
 })();

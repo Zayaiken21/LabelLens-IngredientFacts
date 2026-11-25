@@ -81,9 +81,13 @@
 
     <div class="card" id="findCard">
       <h2>Match it online</h2>
-      <p class="muted small">Barcodes are looked up automatically while you scan. You can also type a barcode or a product name. Results come from Open Food Facts, a free open database. Lookups are cached and spaced out so the service is never overloaded.</p>
+      <p class="muted small">Barcodes are looked up automatically while you scan. You can also type a barcode or any food or drink name. Results come from the free USDA FoodData Central and Open Food Facts databases. Lookups are cached and spaced out so the service is never overloaded.</p>
       <div class="row findrow"><input id="findCode" type="text" inputmode="numeric" placeholder="Barcode (8 to 14 digits)"><button class="btn" id="findCodeBtn">Look up</button></div>
-      <div class="row findrow"><input id="findName" type="text" placeholder="Product name, e.g. hazelnut spread"><button class="btn" id="findNameBtn">Search</button></div>
+      <div class="row findrow"><input id="findName" type="text" placeholder="Any food or drink, e.g. Twinkies"><button class="btn" id="findNameBtn">Search</button></div>
+      <details class="more"><summary>USDA key (optional, raises the search limit)</summary>
+        <p class="muted small">Name search uses USDA FoodData Central (US branded foods, generic foods and drinks) and Open Food Facts (world products). The shared demo key allows about 30 searches an hour. A free key from fdc.nal.usda.gov/api-key-signup allows 1,000. It is saved only on this device.</p>
+        <input id="fdcKey" type="text" placeholder="Paste your free USDA key" autocomplete="off">
+      </details>
       <p class="muted small" id="findMsg"></p>
       <div id="findList"></div>
       <div id="onlineBox" hidden></div>
