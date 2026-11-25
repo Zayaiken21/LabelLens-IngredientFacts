@@ -79,12 +79,26 @@
       <div id="liveScan" class="livescan"></div>
     </div>
 
+    <div class="card" id="findCard">
+      <h2>Match it online</h2>
+      <p class="muted small">Barcodes are looked up automatically while you scan. You can also type a barcode or a product name. Results come from Open Food Facts, a free open database. Lookups are cached and spaced out so the service is never overloaded.</p>
+      <div class="row findrow"><input id="findCode" type="text" inputmode="numeric" placeholder="Barcode (8 to 14 digits)"><button class="btn" id="findCodeBtn">Look up</button></div>
+      <div class="row findrow"><input id="findName" type="text" placeholder="Product name, e.g. hazelnut spread"><button class="btn" id="findNameBtn">Search</button></div>
+      <p class="muted small" id="findMsg"></p>
+      <div id="findList"></div>
+      <div id="onlineBox" hidden></div>
+    </div>
+
     <div class="card" id="nutCard">
-      <div class="livetop"><h2>Nutrition per serving</h2><span class="livestate" id="nutState">Scan the Nutrition Facts panel or type it in</span></div>
-      <p class="muted small">Calories, fats, sodium and sugars are tracked here for your daily and weekly totals. They are not ingredients, so they stay out of the ingredient scan.</p>
+      <div class="livetop"><h2>Nutrition facts</h2><span class="livestate" id="nutState">Waiting for a label</span></div>
+      <p class="muted small" id="nutEmpty">Scan a Nutrition Facts panel (any style: US, EU, drinks) or fill it from the online match. Only the rows that exist on the product are shown.</p>
+      <p class="muted small" id="nutBasis"></p>
       <div id="nutGrid" class="nutgrid"></div>
-      <label class="slider">Servings eaten <input type="number" id="nutServ" value="1" min="0.25" step="0.25" inputmode="decimal"></label>
-      <div class="row"><select id="nutMeal"><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option selected>Snack</option></select><button class="btn primary" id="nutAdd">＋ Add to today's diary</button></div>
+      <select id="nutAddSel" hidden></select>
+      <div id="nutTools">
+        <label class="slider" id="nutServLbl">Servings eaten <input type="number" id="nutServ" value="1" min="0.25" step="0.25" inputmode="decimal"></label>
+        <div class="row"><select id="nutMeal"><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option selected>Snack</option></select><button class="btn primary" id="nutAdd">＋ Add to today's diary</button></div>
+      </div>
     </div>
 
     <div class="card">
@@ -344,6 +358,11 @@
           <input id="fx_fib" type="number" inputmode="decimal" min="0" placeholder="Fiber g">
           <input id="fx_sug" type="number" inputmode="decimal" min="0" placeholder="Total sugars g">
           <input id="fx_add" type="number" inputmode="decimal" min="0" placeholder="Added sugars g">
+          <input id="fx_pot" type="number" inputmode="decimal" min="0" placeholder="Potassium mg">
+          <input id="fx_calc" type="number" inputmode="decimal" min="0" placeholder="Calcium mg">
+          <input id="fx_iron" type="number" inputmode="decimal" min="0" placeholder="Iron mg">
+          <input id="fx_vitd" type="number" inputmode="decimal" min="0" placeholder="Vitamin D mcg">
+          <input id="fx_caf" type="number" inputmode="decimal" min="0" placeholder="Caffeine mg">
         </div>
       </details>
       <div class="row"><button class="btn primary" id="fAdd">＋ Add to diary</button></div>
@@ -506,6 +525,7 @@
 <script src="education.js"></script>
 <script src="ingredient-info.js"></script>
 <script src="nutrition.js"></script>
+<script src="online.js"></script>
 <script src="app.js"></script>
 <script src="tracker.js"></script>
 <script src="journey.js"></script>

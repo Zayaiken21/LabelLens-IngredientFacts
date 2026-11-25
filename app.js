@@ -132,13 +132,119 @@
     const ingOk = ex.count >= 1 && ex.text.length >= 10 && (ex.hasHeading ? hits >= 1 : hits >= 2 && hits / Math.max(1, toks.length) >= 0.2);
     const nutOk = nut._n >= 3;
     const text = ingOk ? ex.text : nutOk ? "Nutrition: " + N.FIELDS.filter(f => nut[f.k] != null).map(f => f.label + " " + nut[f.k]).join(", ") : ex.text;
-    return { text, ing: ingOk ? ex.text : "", nut: nutOk ? nut : null, ok: ingOk || nutOk, hits: ingOk ? hits : nutOk ? nut._n : hits, total: toks.length };
+    return { text, ing: ingOk ? ex.text : "", nut: nutOk ? nut : null, nutRaw: nut, ok: ingOk || nutOk, hits: ingOk ? hits : nutOk ? nut._n : hits, total: toks.length };
   }
   const wordSet = t => new Set(t.toLowerCase().split(/[^a-z]+/).filter(w => w.length >= 3));
   const jaccard = (a, b) => { let i = 0; a.forEach(x => b.has(x) && i++); return i / Math.max(1, a.size + b.size - i); };
 
+  /* ----- helpers for consensus + live nutrition ----- */
+  const topItems = t => (window.IngredientEngine ? window.IngredientEngine.splitTop(t) : String(t).split(",")).map(x => x.trim()).filter(Boolean);
+  function nutLine(n) {                            // only the rows really seen on the label so far
+    if (!n) return ""; const F = window.LLNut.FIELDS.filter(f => n[f.k] != null);
+    return F.length ? "  ·  Nutrition seen: " + F.slice(0, 6).map(f => f.label + " " + n[f.k] + (f.unit === "kcal" ? "" : f.unit)).join(", ") : "";
+  }
+  function finalizeIng(text, cam) {                // keep items seen in at least 2 reads once we have 3+ reads
+    if (!text || cam.reads < 3) return text;
+    const kept = topItems(text).filter(it => (cam.votes.get(LLOnline.normalizeKey(it)) || 0) >= 2);
+    return kept.length >= 2 ? kept.join(", ") : text;
+  }
+
+  /* ----- online match (Open Food Facts) ----- */
+  let online = null;
+  const findMsg = t => { $("findMsg").textContent = t || ""; };
+  const online_err = e => e && e.cool ? `The online database asked us to slow down. Try again in ${e.cool}s. Your scan still works.` :
+    e && e.busy ? "The online database is busy right now. Your scan still works, try again in a minute." :
+    e && e.message === "bad code" ? "That does not look like a barcode (8 to 14 digits)." :
+    e && e.message === "short" ? "Type at least 3 letters." : "Could not reach the online database. Check your connection. Your scan still works.";
+  function cmpNow() { return online && $("ingText").value.trim() && online.ing ? LLOnline.compare($("ingText").value, online.ing) : null; }
+  function showOnline(p, fromList) {
+    online = p; $("findList").innerHTML = fromList ? $("findList").innerHTML : ""; const box = $("onlineBox"); box.hidden = false;
+    const cmp = cmpNow(), nut = LLOnline.toNutrition(p), badge = !cmp ? ["none", "Product found"] : cmp.verdict === "exact" ? ["exact", "Exact match " + cmp.score + "%"] : cmp.verdict === "close" ? ["close", "Close match " + cmp.score + "%"] : ["diff", "Different product " + cmp.score + "%"];
+    box.innerHTML = `<div class="onl ${badge[0]}">
+      ${p.img ? `<img src="${esc(p.img)}" alt="" loading="lazy">` : ""}
+      <div class="onlmeta"><b>${esc(p.name)}</b><small>${esc([p.brand, p.qty].filter(Boolean).join(" · "))}</small><span class="onlbadge">${esc(badge[1])}</span></div></div>
+      ${cmp ? `<p class="small">${cmp.matched} of ${cmp.scanCount} scanned ingredients match the online list (${cmp.onlineCount} online).${cmp.unmatched.length ? ` Not found online: <b>${esc(cmp.unmatched.slice(0, 5).join(", "))}</b>.` : ""}${cmp.missing.length ? ` Online but not scanned: ${esc(cmp.missing.slice(0, 4).join(", "))}.` : ""}</p>` : (p.ing ? '<p class="small muted">Scan or paste the ingredient list to compare it with this product.</p>' : '<p class="small muted">This product has no ingredient list online.</p>')}
+      <div class="row">
+        ${cmp && cmp.corrected !== $("ingText").value ? '<button class="btn primary" id="onlUseFixed">✔ Use verified list</button>' : ""}
+        ${p.ing ? '<button class="btn" id="onlUseOnline">Use online ingredients</button>' : ""}
+        ${nut._n ? `<button class="btn" id="onlNut">Fill nutrition (${nut._n} rows)</button>` : ""}
+      </div>`;
+    const on = (id, fn) => { const b = $(id); if (b) b.addEventListener("click", fn); };
+    on("onlUseFixed", () => { setIng(cmp.corrected); toast("Ingredient list verified against the online product"); });
+    on("onlUseOnline", () => { setIng(p.ing); toast("Using the online ingredient list"); });
+    on("onlNut", () => { setNut(nut); toast("Nutrition filled from the online product"); $("nutCard").scrollIntoView({ behavior: "smooth", block: "center" }); });
+  }
+  function setIng(t) { liveReveal = true; $("ingText").value = t; $("ingText").dispatchEvent(new Event("input")); setTimeout(() => online && showOnline(online, true), 400); }
+  let findBusy = false;
+  async function guard(btn, fn) {
+    if (findBusy) return; findBusy = true; btn.disabled = true;
+    try { await fn(); } catch (e) { findMsg(online_err(e)); } finally { findBusy = false; btn.disabled = false; }
+  }
+  async function lookupCode(code, quiet) {
+    findMsg("Looking up " + code + "… (requests are spaced out to stay within the service limits)");
+    const p = await LLOnline.byBarcode(code);
+    if (!p) { findMsg("No product with barcode " + code + " is in the online database yet. You can still use the scan, or search by name."); return null; }
+    findMsg(""); showOnline(p); if (!quiet) toast("Found online: " + p.name); return p;
+  }
+  $("findCodeBtn").addEventListener("click", () => guard($("findCodeBtn"), () => lookupCode($("findCode").value)));
+  $("findCode").addEventListener("keydown", e => { if (e.key === "Enter") $("findCodeBtn").click(); });
+  $("findNameBtn").addEventListener("click", () => guard($("findNameBtn"), async () => {
+    findMsg("Searching…"); const list = await LLOnline.byName($("findName").value);
+    const scan = $("ingText").value.trim();
+    list.forEach(p => { const c = scan && p.ing ? LLOnline.compare(scan, p.ing) : null; p._score = c ? c.score : -1; });
+    list.sort((a, b) => b._score - a._score);
+    const box = $("findList"); box.innerHTML = "";
+    findMsg(list.length ? (scan ? "Best matches first, ranked by how well their ingredients match your scan:" : "Pick a product:") : "Nothing found. Try fewer words or the barcode.");
+    list.forEach(p => {
+      const b = document.createElement("button"); b.className = "toprow";
+      b.innerHTML = `<span><b>${esc(p.name)}</b><small>${esc(p.brand || "")}${p._score >= 0 ? " · ingredients " + p._score + "% match" : ""}</small></span><i>›</i>`;
+      b.addEventListener("click", () => showOnline(p, true)); box.appendChild(b);
+    });
+  }));
+  $("findName").addEventListener("keydown", e => { if (e.key === "Enter") $("findNameBtn").click(); });
+
+  /* ----- barcode reading while the camera runs ----- */
+  let bdet = null;
+  const loadZX = () => new Promise(res => {
+    if (window.ZXing) return res(true);
+    const sc = document.createElement("script"); sc.src = "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js";
+    sc.onload = () => res(!!window.ZXing); sc.onerror = () => res(false); document.head.appendChild(sc);
+  });
+  async function initBarcode() {
+    if ("BarcodeDetector" in window) { try { bdet = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] }); return true; } catch {} }
+    return loadZX();
+  }
+  async function detectBarcode() {
+    const v = $("camVideo"); if (!v.videoWidth) return "";
+    try {
+      if (bdet) { const r = await bdet.detect(v); return r[0] ? r[0].rawValue : ""; }
+      if (window.ZXing) {
+        const k = Math.min(1, 960 / v.videoWidth), c = document.createElement("canvas"); c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
+        c.getContext("2d", { willReadFrequently: true }).drawImage(v, 0, 0, c.width, c.height);
+        const Z = window.ZXing, reader = new Z.MultiFormatReader(), hints = new Map();
+        hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A]); hints.set(Z.DecodeHintType.TRY_HARDER, true); reader.setHints(hints);
+        return reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(c)))).getText();
+      }
+    } catch {}
+    return "";
+  }
+  async function barLoop() {
+    if (!(await initBarcode())) return;
+    cam.barRun = true;
+    while (cam.run && !cam.code) {
+      const code = await detectBarcode();
+      if (code && LLOnline.ean13ok(code.replace(/\D/g, ""))) {
+        cam.code = code.replace(/\D/g, ""); $("findCode").value = cam.code; if (navigator.vibrate) navigator.vibrate(40);
+        hud("Barcode " + cam.code + " found, matching online…", "found");
+        guard($("findCodeBtn"), () => lookupCode(cam.code, true));
+        break;
+      }
+      await sleep(bdet ? 350 : 900);
+    }
+  }
+
   /* ----- live camera scanner ----- */
-  const cam = { stream: null, track: null, run: false, worker: null, last: "", stable: 0, bestRead: null, cand: null, candHits: 0, t0: 0, n: 0, locking: false, nut: null };
+  const cam = { stream: null, track: null, run: false, worker: null, last: "", stable: 0, bestRead: null, cand: null, candHits: 0, t0: 0, n: 0, locking: false, nut: null, votes: new Map(), reads: 0, code: "", barRun: false };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const hud = (t, state) => { $("camHud").textContent = t; if (state) $("camView").dataset.state = state; };
 
@@ -207,11 +313,11 @@
     await new Promise(r => (v.onloadedmetadata = r)); try { await v.play(); } catch {}
     $("camView").style.aspectRatio = v.videoWidth + " / " + v.videoHeight;
     setupTrack();
-    Object.assign(cam, { run: true, last: "", stable: 0, bestRead: null, cand: null, candHits: 0, t0: Date.now(), n: 0, locking: false, nut: null });
+    Object.assign(cam, { run: true, last: "", stable: 0, bestRead: null, cand: null, candHits: 0, t0: Date.now(), n: 0, locking: false, nut: null, votes: new Map(), reads: 0, code: "", barRun: false });
     scanBusy = true; $("camCapture").classList.remove("pulse"); $("camCapture").textContent = "🔒 Lock now";
     $("liveCard").classList.add("scanning"); $("liveState").textContent = "Scanning…";
     $("camBox").scrollIntoView({ behavior: "smooth", block: "start" });
-    camLoop();
+    camLoop(); barLoop();
   }
   function setupTrack() {                           // continuous focus, light, zoom where the device allows
     cam.track = cam.stream.getVideoTracks()[0]; $("camLightBtn").hidden = true; $("camZoomWrap").hidden = true;
@@ -265,13 +371,14 @@
           cam.stable = 0; cam.last = "";
           $("scanStatus").textContent = r.hits ? "Partly readable, keep going" : "Looking for an ingredient list…";
           setBar($("scanBar"), r.hits ? 25 : 6);
-          $("camLive").textContent = r.hits ? "…" + r.text.slice(0, 160) : "";
+          $("camLive").textContent = (r.hits ? "…" + r.text.slice(0, 160) : "") + nutLine(r.nutRaw);
           hud(burst.sh < 25 ? "Hold steady, tap the screen to focus" : dark ? "Too dark. Tap 🔦 or add light" : "Fit the ingredient list inside the frame", r.hits ? "found" : "search");
         } else {
+          if (r.ing) { cam.reads++; topItems(r.ing).forEach(it => { const k = LLOnline.normalizeKey(it); if (k) cam.votes.set(k, (cam.votes.get(k) || 0) + 1); }); }
           const same = cam.last && jaccard(wordSet(r.text), wordSet(cam.last)) >= 0.55;
           cam.stable = same ? cam.stable + 1 : 0; cam.last = r.text;
           if (!same || r.text.length >= ((cam.bestRead && cam.bestRead.text) || "").length * 0.8) cam.bestRead = r;
-          $("camLive").textContent = r.text.length > 220 ? r.text.slice(0, 217) + "…" : r.text;
+          $("camLive").textContent = (r.text.length > 220 ? r.text.slice(0, 217) + "…" : r.text) + nutLine(r.nutRaw);
           setBar($("scanBar"), Math.min(100, 35 + cam.stable * 40));
           $("scanStatus").textContent = cam.stable ? "Steady, locking…" : (r.ing ? "Ingredient list found" : "Nutrition panel found");
           hud(cam.stable ? "Steady… locking" : (r.ing ? "Ingredient list found" : "Nutrition panel found"), cam.stable ? "steady" : "found");
@@ -300,8 +407,9 @@
     await sleep(1100);
     stopCam(); $("camLockBadge").hidden = true; cam.locking = false;
     const nut = (read.nut && read.nut._n >= 3) ? read.nut : cam.nut;
-    if (read.ing) { liveReveal = true; $("ingText").value = read.ing; $("ingText").dispatchEvent(new Event("input")); }
+    if (read.ing) { liveReveal = true; $("ingText").value = finalizeIng(read.ing, cam); $("ingText").dispatchEvent(new Event("input")); }
     if (nut) setNut(nut);
+    if (online) showOnline(online, true);
     const blob = await canvasToBlob(snap, "image/jpeg", 0.82);
     if (blob) { showSnap(blob); currentPhoto = blob; }
     toast(read.ing && nut ? "Locked: ingredients and nutrition captured" : read.ing ? "Locked. Now scan the Nutrition Facts side too, or Analyze" : "Locked nutrition. Now scan the ingredient list");
@@ -312,18 +420,25 @@
     img.dataset.u = URL.createObjectURL(blob); img.src = img.dataset.u; $("snapWrap").hidden = false;
   }
 
-  /* ----- nutrition panel (tracked, never treated as ingredients) ----- */
-  let nutVals = {};
-  function buildNutGrid() {
-    $("nutGrid").innerHTML = window.LLNut.FIELDS.map(f => `<label class="nf"><span>${f.label} <small>${f.unit}</small></span><input type="number" min="0" step="any" inputmode="decimal" data-nk="${f.k}"></label>`).join("");
-    $("nutGrid").querySelectorAll("input").forEach(i => i.addEventListener("input", () => { nutVals[i.dataset.nk] = i.value === "" ? undefined : +i.value; $("nutState").textContent = "Edited"; }));
+  /* ----- nutrition panel: shows only what the label (or product) actually has ----- */
+  let nutVals = {}, nutShow = new Set(), nutBasis = "serving", nutServing = "";
+  function renderNut() {
+    const F = window.LLNut.FIELDS, have = F.filter(f => nutVals[f.k] != null || nutShow.has(f.k)), missing = F.filter(f => !have.includes(f));
+    $("nutGrid").innerHTML = have.map(f => `<label class="nf"><span>${f.label} <small>${f.unit}</small></span><input type="number" min="0" step="any" inputmode="decimal" data-nk="${f.k}" value="${nutVals[f.k] != null ? nutVals[f.k] : ""}"></label>`).join("");
+    $("nutGrid").querySelectorAll("input").forEach(i => i.addEventListener("input", () => { if (i.value === "") delete nutVals[i.dataset.nk]; else nutVals[i.dataset.nk] = +i.value; }));
+    $("nutAddSel").innerHTML = '<option value="">＋ Add a nutrient…</option>' + missing.map(f => `<option value="${f.k}">${f.label}</option>`).join("");
+    $("nutAddSel").hidden = !missing.length;
+    $("nutEmpty").hidden = have.length > 0; $("nutTools").hidden = !have.length;
+    $("nutBasis").textContent = have.length ? (nutBasis === "100g" ? "Values are per 100 g (or 100 ml)" : "Values are per serving" + (nutServing ? " · " + nutServing : "")) : "";
+    $("nutServLbl").firstChild.textContent = nutBasis === "100g" ? "Amount eaten (1 = 100 g or 100 ml) " : "Servings eaten ";
   }
+  $("nutAddSel").addEventListener("change", e => { if (e.target.value) { nutShow.add(e.target.value); renderNut(); } });
   function setNut(n) {
-    nutVals = {};
-    $("nutGrid").querySelectorAll("input").forEach(i => { const v = n[i.dataset.nk]; i.value = v == null ? "" : v; nutVals[i.dataset.nk] = v == null ? undefined : v; });
-    $("nutState").textContent = "Read from label" + (n.serving ? " · serving " + n.serving : "");
+    nutVals = {}; nutShow = new Set(); window.LLNut.FIELDS.forEach(f => { if (n[f.k] != null) nutVals[f.k] = n[f.k]; });
+    nutBasis = n.basis || "serving"; nutServing = n.serving || "";
+    $("nutState").textContent = "Filled in"; renderNut();
   }
-  buildNutGrid();
+  renderNut();
   $("nutAdd").addEventListener("click", () => {
     if (!window.LL.addFood) return toast("Tracker not ready");
     const has = Object.keys(nutVals).some(k => nutVals[k] != null);

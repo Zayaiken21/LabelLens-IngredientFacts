@@ -24,3 +24,6 @@ General consumer information drawn from WHO, EFSA, IARC, JECFA, UK FSA, Health C
 
 ## Nutrition tracking
 Scan the Nutrition Facts panel (or type it in) to capture calories, fats, trans fat, cholesterol, sodium, carbs, fiber, sugars, added sugars and protein. Add servings to your diary and see daily values and weekly totals and averages in the Track tab. Nutrition rows are kept out of the ingredient scan.
+
+## Online match
+Barcodes read by the camera (or typed in) and product-name searches are matched against Open Food Facts, a free open database. The scanned ingredient list is compared with the online list (exact / close / different), typos can be corrected from it, and nutrition can be filled from it. Lookups are cached for 14 days, queued with spacing (about 6.5 s between product reads, 9 s between searches), time out after 9 s, and pause for 90 s after any busy or error response, so the service's limits are respected. The scanner works fully without it.

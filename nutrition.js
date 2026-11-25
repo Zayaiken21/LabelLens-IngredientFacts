@@ -35,31 +35,51 @@
     { k: "fib", label: "Fiber", unit: "g", dv: 28, good: true },
     { k: "sug", label: "Total sugars", unit: "g", dv: 0 },
     { k: "add", label: "Added sugars", unit: "g", dv: 50 },
-    { k: "pro", label: "Protein", unit: "g", dv: 50, good: true }
+    { k: "pro", label: "Protein", unit: "g", dv: 50, good: true },
+    { k: "pot", label: "Potassium", unit: "mg", dv: 4700, good: true },
+    { k: "calc", label: "Calcium", unit: "mg", dv: 1300, good: true },
+    { k: "iron", label: "Iron", unit: "mg", dv: 18, good: true },
+    { k: "vitd", label: "Vitamin D", unit: "mcg", dv: 20, good: true },
+    { k: "caf", label: "Caffeine", unit: "mg", dv: 400 }
   ];
+  const N = "(\\d+(?:[.,]\\d+)?)";
   const num = s => { const v = parseFloat(String(s).replace(",", ".")); return isNaN(v) ? null : v; };
   function fixDigits(t) { // common OCR slips inside nutrition rows
     return t.replace(/\b[Oo](?=\s?(?:g|mg|mcg)\b)/g, "0").replace(/(\d)[Oo](?=\s?(?:g|mg|mcg)\b)/g, "$10").replace(/(\d),(\d)\s?g/g, "$1.$2 g");
   }
-  const RX = {
-    cal: [/calories\s*(?:per serving)?\s*[:\-]?\s*(\d{2,4})/i],
-    fat: [/total\s*fat\s*(\d+(?:[.,]\d+)?)\s*g/i],
-    sat: [/sat(?:urated)?\.?\s*fat\s*(\d+(?:[.,]\d+)?)\s*g/i],
-    trans: [/trans\s*fat\s*(\d+(?:[.,]\d+)?)\s*g/i],
-    chol: [/cholesterol\s*(\d+(?:[.,]\d+)?)\s*mg/i],
-    sod: [/sodium\s*(\d+(?:[.,]\d+)?)\s*mg/i],
-    carb: [/total\s*carb\w*\.?\s*(\d+(?:[.,]\d+)?)\s*g/i],
-    fib: [/(?:dietary\s*)?fib(?:er|re)\s*(\d+(?:[.,]\d+)?)\s*g/i],
-    sug: [/total\s*sugars?\s*(\d+(?:[.,]\d+)?)\s*g/i],
-    add: [/includes\s*(\d+(?:[.,]\d+)?)\s*g\s*added/i, /added\s*sugars?\s*(\d+(?:[.,]\d+)?)\s*g/i],
-    pro: [/protein\s*(\d+(?:[.,]\d+)?)\s*g/i]
-  };
+  const first = (t, list, mult) => { for (const r of list) { const m = t.match(r); if (m) { const v = num(m[1]); if (v != null) return v * (mult || 1); } } return null; };
+  /* Reads US, Canadian, UK/EU and drink-style panels. Only fields that are really present come back. */
   function parse(text) {
-    const t = fixDigits(" " + String(text || "") + " "), out = {}; let n = 0;
-    for (const f of FIELDS) for (const r of RX[f.k]) { const m = t.match(r); if (m) { const v = num(m[1]); if (v != null) { out[f.k] = v; n++; break; } } }
+    let t = fixDigits(" " + String(text || "").replace(/\s+/g, " ") + " "); const o = {};
+    const set = (k, v) => { if (v != null && isFinite(v)) o[k] = Math.round(v * 100) / 100; };
+    // basis: per 100 g/ml (EU style) or per serving
+    const p100 = t.search(/per\s*100\s*(?:g|ml)|100\s*(?:g|ml)\b/i), pSrv = t.search(/per\s*(?:serving|portion|bottle|can|cup)|serving\s*size/i);
+    o.basis = p100 >= 0 && (pSrv < 0 || p100 < pSrv) ? "100g" : "serving";
+    set("cal", first(t, [new RegExp("calories\\s*(?:per\\s*serving)?\\s*[:\\-]?\\s*(\\d{1,4})", "i"), new RegExp("(\\d{2,4})\\s*kcal", "i")]));
+    if (o.cal == null) { const kj = first(t, [new RegExp("energy[^\\d]{0,14}(\\d{3,5})\\s*kj", "i"), new RegExp("(\\d{3,5})\\s*kj", "i")]); if (kj != null) set("cal", kj / 4.184); }
+    // remove sub-rows so generic fat/sugar searches do not catch them
+    const subFat = /(?:saturated|saturates|trans|sat\.?|polyunsaturated|polyunsaturates|monounsaturated|mono-unsaturates)\s*(?:fat|fatty acids)?\s*[\d.,]+\s*g/gi;
+    const subSug = /(?:includes\s*[\d.,]+\s*g\s*added\s*sugars?|added\s*sugars?\s*[\d.,]+\s*g)/gi;
+    set("sat", first(t, [new RegExp("(?:saturated\\s*fat|saturates|sat\\.?\\s*fat)\\s*" + N + "\\s*g", "i")]));
+    set("trans", first(t, [new RegExp("trans\\s*fat\\s*" + N + "\\s*g", "i")]));
+    set("fat", first(t.replace(subFat, " "), [new RegExp("(?:total\\s*)?fat\\s*" + N + "\\s*g", "i"), new RegExp("lipids?\\s*" + N + "\\s*g", "i")]));
+    set("chol", first(t, [new RegExp("cholesterol\\s*" + N + "\\s*mg", "i")]));
+    set("sod", first(t, [new RegExp("sodium\\s*" + N + "\\s*mg", "i")]));
+    if (o.sod == null) { const g = first(t, [new RegExp("sodium\\s*" + N + "\\s*g\\b", "i")], 1000); if (g != null) set("sod", g); }
+    if (o.sod == null) { const salt = first(t, [new RegExp("salt\\s*" + N + "\\s*g", "i")], 400); if (salt != null) set("sod", salt); }
+    set("carb", first(t, [new RegExp("(?:total\\s*)?carbo\\w*\\.?\\s*" + N + "\\s*g", "i")]));
+    set("fib", first(t, [new RegExp("(?:dietary\\s*)?fib(?:er|re)\\s*" + N + "\\s*g", "i")]));
+    set("add", first(t, [new RegExp("includes\\s*" + N + "\\s*g\\s*added", "i"), new RegExp("added\\s*sugars?\\s*" + N + "\\s*g", "i")]));
+    set("sug", first(t.replace(subSug, " "), [new RegExp("(?:total\\s*)?sugars?\\s*" + N + "\\s*g", "i")]));
+    set("pro", first(t, [new RegExp("protein\\s*" + N + "\\s*g", "i")]));
+    set("pot", first(t, [new RegExp("potassium\\s*" + N + "\\s*mg", "i")]));
+    set("calc", first(t, [new RegExp("calcium\\s*" + N + "\\s*mg", "i")]));
+    set("iron", first(t, [new RegExp("iron\\s*" + N + "\\s*mg", "i")]));
+    set("vitd", first(t, [new RegExp("vitamin\\s*d\\s*" + N + "\\s*(?:mcg|µg|ug)", "i")]));
+    set("caf", first(t, [new RegExp("caffeine\\s*" + N + "\\s*mg", "i")]));
     const sv = t.match(/serving\s*size\s*[:\-]?\s*([^\n]{2,40}?)(?=\s+(?:servings|amount|calories|per)\b|$)/i);
-    if (sv) out.serving = sv[1].trim();
-    out._n = n; return out;
+    if (sv) o.serving = sv[1].trim();
+    o._n = FIELDS.filter(f => o[f.k] != null).length; return o;
   }
 
   /* ----- ingredient list extraction ----- */

@@ -28,9 +28,9 @@
     return t;
   }
   const NF = window.LLNut ? window.LLNut.FIELDS : [];
-  const XK = ["sat", "trans", "chol", "sod", "fib", "sug", "add"];
+  const XK = ["sat", "trans", "chol", "sod", "fib", "sug", "add", "pot", "calc", "iron", "vitd", "caf"];
   function nutTotals(d) {          // all tracked nutrients for one day
-    const o = { cal: 0, fat: 0, sat: 0, trans: 0, chol: 0, sod: 0, carb: 0, fib: 0, sug: 0, add: 0, pro: 0 };
+    const o = { cal: 0, fat: 0, sat: 0, trans: 0, chol: 0, sod: 0, carb: 0, fib: 0, sug: 0, add: 0, pro: 0, pot: 0, calc: 0, iron: 0, vitd: 0, caf: 0 };
     (d ? d.entries : []).forEach(e => {
       o.cal += num(e.cal); o.fat += num(e.fat); o.carb += num(e.carb); o.pro += num(e.pro);
       XK.forEach(k => (o[k] += num(e.x && e.x[k])));
@@ -42,7 +42,7 @@
   const dvOf = f => (f.k === "cal" ? calGoal() : f.dv);
   const tone = (f, pct) => f.good ? (pct >= 100 ? "green" : pct >= 50 ? "yellow" : "red") : (pct <= 60 ? "green" : pct <= 100 ? "yellow" : "red");
   function bars(tot, days) {
-    return NF.filter(f => dvOf(f) > 0 && tot[f.k] != null).map(f => {
+    return NF.filter(f => dvOf(f) > 0 && (tot[f.k] > 0 || ["cal","fat","sod","pro"].includes(f.k))).map(f => {
       const v = tot[f.k] / (days || 1), dv = dvOf(f), pct = Math.round((v / dv) * 100);
       return `<div class="dvrow"><span>${f.label}</span><div class="dvbar"><i class="${tone(f, pct)}" style="width:${Math.min(100, pct)}%"></i></div><b>${fmt(f.k, v)}${f.unit === "kcal" ? "" : f.unit} <small>${pct}%</small></b></div>`;
     }).join("");
@@ -53,10 +53,10 @@
     box.innerHTML = (d && d.entries.length ? bars(tot, 1) : '<p class="muted small">Log foods with nutrition numbers (scan a Nutrition Facts panel) to see your daily values.</p>') +
       (tot.trans ? `<p class="muted small">Trans fat today: ${fmt("trans", tot.trans)} g. It has no daily value, so keep it as low as you can.</p>` : "");
     // last 7 days
-    const week = { cal: 0, fat: 0, sat: 0, trans: 0, chol: 0, sod: 0, carb: 0, fib: 0, sug: 0, add: 0, pro: 0 }; let logged = 0;
+    const week = { cal: 0, fat: 0, sat: 0, trans: 0, chol: 0, sod: 0, carb: 0, fib: 0, sug: 0, add: 0, pro: 0, pot: 0, calc: 0, iron: 0, vitd: 0, caf: 0 }; let logged = 0;
     for (let i = 0; i < 7; i++) { const dd = diary[shift(todayKey(), -i)]; if (dd && dd.entries.length) { logged++; const x = nutTotals(dd); Object.keys(week).forEach(k => (week[k] += x[k])); } }
     wk.innerHTML = logged ? `<p class="muted small">${logged} day${logged === 1 ? "" : "s"} logged in the last 7. Daily average:</p>` + bars(week, logged) +
-      `<table class="wktab"><tr><th></th><th>Week total</th><th>Daily avg</th></tr>` + NF.map(f => `<tr><td>${f.label}</td><td>${fmt(f.k, week[f.k])} ${f.unit}</td><td>${fmt(f.k, week[f.k] / logged)} ${f.unit}</td></tr>`).join("") + `</table>`
+      `<table class="wktab"><tr><th></th><th>Week total</th><th>Daily avg</th></tr>` + NF.filter(f => week[f.k] > 0).map(f => `<tr><td>${f.label}</td><td>${fmt(f.k, week[f.k])} ${f.unit}</td><td>${fmt(f.k, week[f.k] / logged)} ${f.unit}</td></tr>`).join("") + `</table>`
       : '<p class="muted small">Nothing logged this week yet.</p>';
   }
   function addFood(o) {            // called from the scanner: scales a serving by servings eaten
@@ -199,7 +199,7 @@
   $("hideNums").addEventListener("change", () => { hideNums = $("hideNums").checked; save("ll_hidenums", hideNums); render(); });
 
   $("trkExport").addEventListener("click", () => {
-    const rows = [["date", "meal", "food", "color", "calories", "protein_g", "carbs_g", "fat_g", "sat_fat_g", "trans_fat_g", "cholesterol_mg", "sodium_mg", "fiber_g", "sugars_g", "added_sugars_g"]];
+    const rows = [["date", "meal", "food", "color", "calories", "protein_g", "carbs_g", "fat_g", "sat_fat_g", "trans_fat_g", "cholesterol_mg", "sodium_mg", "fiber_g", "sugars_g", "added_sugars_g", "potassium_mg", "calcium_mg", "iron_mg", "vitamin_d_mcg", "caffeine_mg"]];
     Object.keys(diary).sort().forEach(k => diary[k].entries.forEach(e =>
       rows.push([k, e.meal, '"' + String(e.name).replace(/"/g, '""') + '"', e.color, e.cal || "", e.pro || "", e.carb || "", e.fat || ""].concat(XK.map(k => (e.x && e.x[k]) || "")))));
     if (rows.length === 1) return toast("Nothing to export yet");
