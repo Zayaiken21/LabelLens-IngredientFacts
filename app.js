@@ -152,7 +152,7 @@
   /* ----- online match (Open Food Facts) ----- */
   let online = null;
   const findMsg = t => { $("findMsg").textContent = t || ""; };
-  const online_err = e => e && e.cool ? `The online database asked us to slow down. Try again in ${e.cool}s. Your scan still works.` :
+  const online_err = e => e && e.search ? "Name search is unavailable right now (the free service limits it). Scan or type the barcode instead, that is more reliable. Your scan still works." : e && e.cool ? `The online database asked us to slow down. Try again in ${e.cool}s. Your scan still works.` :
     e && e.busy ? "The online database is busy right now. Your scan still works, try again in a minute." :
     e && e.message === "bad code" ? "That does not look like a barcode (8 to 14 digits)." :
     e && e.message === "short" ? "Type at least 3 letters." : "Could not reach the online database. Check your connection. Your scan still works.";
@@ -189,7 +189,9 @@
   $("findCodeBtn").addEventListener("click", () => guard($("findCodeBtn"), () => lookupCode($("findCode").value)));
   $("findCode").addEventListener("keydown", e => { if (e.key === "Enter") $("findCodeBtn").click(); });
   $("findNameBtn").addEventListener("click", () => guard($("findNameBtn"), async () => {
-    findMsg("Searching…"); const list = await LLOnline.byName($("findName").value);
+    findMsg("Searching… (name search is rate limited, so it can take a few seconds)");
+    let list; try { list = await LLOnline.byName($("findName").value); }
+    catch (e) { if (e && (e.cool || e.busy || e.message === "short")) throw e; throw Object.assign(new Error("search"), { search: true }); }
     const scan = $("ingText").value.trim();
     list.forEach(p => { const c = scan && p.ing ? LLOnline.compare(scan, p.ing) : null; p._score = c ? c.score : -1; });
     list.sort((a, b) => b._score - a._score);

@@ -2,7 +2,7 @@
    compares its ingredient list with what you scanned, and converts its nutrition to LabelLens fields.
    Built to stay inside the service's limits: cache, queue with spacing, timeouts, cooldown after errors. */
 (() => {
-  const OFF = "https://world.openfoodfacts.org", SEARCH = "https://search.openfoodfacts.org";
+  const OFF = "https://world.openfoodfacts.org";
   const GAP = { product: 6500, search: 9000 };        // service allows ~15 product reads/min and 10 searches/min per IP
   const TTL = 14 * 864e5, MAXC = 40;
   const mem = { last: { product: 0, search: 0 }, cool: 0, inflight: new Map(), chain: Promise.resolve() };
@@ -47,8 +47,9 @@
   }
   async function byName(q) {
     q = String(q || "").trim().toLowerCase().slice(0, 80); if (q.length < 3) throw new Error("short");
-    const j = await polite("search", `${SEARCH}/search?q=${encodeURIComponent(q)}&page_size=6&fields=code,product_name,brands,ingredients_text,nutriments,serving_size,serving_quantity,image_front_small_url`, "s:" + q);
-    const hits = j ? (j.hits || j.products || []) : [];
+    // cgi/search.pl is the text-search endpoint that sends CORS headers, so it works from a web page
+    const j = await polite("search", `${OFF}/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=6&fields=code,product_name,brands,quantity,ingredients_text,ingredients_text_en,nutriments,serving_size,serving_quantity,image_front_small_url`, "s:" + q);
+    const hits = j ? (j.products || j.hits || []) : [];
     return hits.map(normalize).filter(p => p.name);
   }
   function normalize(p) {

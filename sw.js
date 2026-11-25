@@ -1,4 +1,4 @@
-const V="ll-v11",FILES=["./","index.html","styles.css","app.js","crop.js","cutout.js","tracker.js","journey.js","ingredients.js","ingredients-extra.js","education.js","facts.js","nutrition.js","online.js","ingredient-info.js","facts-more.js","ingredients-more.js","facts-data.js","icon.svg"];
+const V="ll-v12",FILES=["./","index.html","styles.css","app.js","crop.js","cutout.js","tracker.js","journey.js","ingredients.js","ingredients-extra.js","education.js","facts.js","nutrition.js","online.js","ingredient-info.js","facts-more.js","ingredients-more.js","facts-data.js","icon.svg"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(FILES).catch(()=>{})).then(()=>self.skipWaiting()))});
 self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==V).map(x=>caches.delete(x)))).then(()=>self.clients.claim()))});
 self.addEventListener("fetch",e=>{
