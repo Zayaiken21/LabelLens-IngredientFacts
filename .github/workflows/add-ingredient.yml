@@ -1,0 +1,29 @@
+name: Add approved ingredient
+on:
+  issues:
+    types: [labeled]
+permissions:
+  contents: write
+  issues: write
+  actions: write
+jobs:
+  add:
+    if: github.event.label.name == 'approved-ingredient'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Append to community.json
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: python3 .github/scripts/add_ingredient.py
+      - name: Commit and redeploy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "labellens-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add community.json
+          git commit -m "Add community ingredient from issue #${{ github.event.issue.number }}" || exit 0
+          git push
+          gh workflow run pages.yml
+          gh issue close ${{ github.event.issue.number }} --comment "Added to the shared glossary. It appears for everyone after the next deploy."

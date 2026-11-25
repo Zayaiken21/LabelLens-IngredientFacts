@@ -15,7 +15,7 @@
   const cput = (k, v) => { const c = load(); c[k] = { t: Date.now(), v }; store(c); };
 
   /* ---------- polite network ---------- */
-  async function polite(kind, url, key) {
+  async function polite(kind, url, key, tx) {
     const hit = cget(key); if (hit) return hit.v;
     if (mem.inflight.has(key)) return mem.inflight.get(key);
     const run = mem.chain.then(async () => {
@@ -27,10 +27,10 @@
       try {
         const res = await fetch(url, { signal: ctl.signal, headers: { Accept: "application/json" } });
         if (res.status === 404) { cput(key, null); return null; }
-        if (kind === "fdc" && (res.status === 401 || res.status === 403)) throw Object.assign(new Error("key"), { detail: "the USDA key was rejected", keyBad: true });
+        if (kind === "fdc" && (res.status === 401 || res.status === 403)) throw Object.assign(new Error("key"), { detail: "the search key was rejected", keyBad: true });
         if (res.status === 429 || res.status === 503 || res.status >= 500) { mem[ck] = Date.now() + (kind === "fdc" ? 600000 : 90000); throw Object.assign(new Error("busy"), { busy: true, fdc: kind === "fdc" }); }
         if (!res.ok) throw Object.assign(new Error("http"), { detail: "HTTP " + res.status });
-        const json = await res.json(); cput(key, json); return json;
+        const raw = await res.json(), json = tx ? tx(raw) : raw; cput(key, json); return json;
       } catch (e) { if (e instanceof TypeError) e.detail = "the browser could not connect (offline, or the service blocked the request)"; if (e.name === "AbortError") { mem[ck] = Date.now() + 20000; throw Object.assign(new Error("timeout"), { busy: true }); } throw e; }
       finally { clearTimeout(to); }
     });
@@ -56,16 +56,17 @@
   }
   /* ---------- USDA FoodData Central (US branded foods, generic foods and drinks) ---------- */
   const FDC = "https://api.nal.usda.gov/fdc/v1";
-  const fdcKey = () => { try { return (localStorage.getItem("ll_fdc_key") || "").trim() || "DEMO_KEY"; } catch { return "DEMO_KEY"; } };
-  function fdcBudget() {                               // stay under the hourly cap: 30 (demo key) or 1000 (own key)
-    const cap = fdcKey() === "DEMO_KEY" ? 24 : 900, now = Date.now();
-    let l = []; try { l = JSON.parse(localStorage.getItem("ll_fdc_calls") || "[]").filter(x => now - x < 3600e3); } catch {}
-    if (l.length >= cap) throw Object.assign(new Error("budget"), { busy: true, fdc: true, budget: true });
-    l.push(now); try { localStorage.setItem("ll_fdc_calls", JSON.stringify(l)); } catch {}
+  const fdcKey = () => (window.LL_CONFIG && String(window.LL_CONFIG.fdcKey || "").trim()) || "DEMO_KEY";   // site key comes from config.js, written at deploy time from a GitHub secret
+  /* Per-device allowance: 50 name searches per rolling hour. Cached repeats are free. */
+  const QCAP = 50, QKEY = "ll_search_calls";
+  const qlist = () => { const now = Date.now(); try { return JSON.parse(localStorage.getItem(QKEY) || "[]").filter(x => now - x < 3600e3); } catch { return []; } };
+  function quota() { const l = qlist(); return { cap: QCAP, used: l.length, left: Math.max(0, QCAP - l.length), mins: l.length ? Math.max(1, Math.ceil((l[0] + 3600e3 - Date.now()) / 60000)) : 0 }; }
+  function spend() {
+    const q = quota(); if (q.left <= 0) throw Object.assign(new Error("quota"), { quota: true, mins: q.mins });
+    const l = qlist(); l.push(Date.now()); try { localStorage.setItem(QKEY, JSON.stringify(l)); } catch {}
   }
   const NUT_MAP = [["208", "energy-kcal", "KCAL"], ["204", "fat"], ["606", "saturated-fat"], ["605", "trans-fat"], ["601", "cholesterol"], ["307", "sodium"], ["205", "carbohydrates"], ["291", "fiber"],
     ["269", "sugars"], ["539", "added-sugars"], ["203", "proteins"], ["306", "potassium"], ["301", "calcium"], ["303", "iron"], ["328", "vitamin-d"], ["262", "caffeine"]];
-  const UNIT = { G: 1, MG: 1e-3, UG: 1e-6, "µG": 1e-6, KCAL: 1 };
   function fromFDC(f) {
     const n = {};
     (f.foodNutrients || []).forEach(x => {
@@ -80,46 +81,79 @@
     const title = String(f.description || "").toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
     return { code: f.gtinUpc || "", name: title, brand: f.brandName || f.brandOwner || "", qty: "", ing: f.ingredients || "", src: "USDA",
       serving: f.householdServingFullText ? `${f.householdServingFullText}${servingG ? " (" + servingG + " " + su + ")" : ""}` : (servingG ? servingG + " " + su : ""),
-      servingG, nutr: n, img: "", dataType: f.dataType };
-  }
-  async function byNameFDC(q) {
-    fdcBudget();
-    const key = fdcKey(), url = `${FDC}/foods/search?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(q)}&dataType=Branded,Foundation,SR%20Legacy&pageSize=12&requireAllWords=false`;
-    const j = await polite("fdc", url, "f:" + q);           // cache key excludes the API key on purpose
-    return (j && j.foods ? j.foods : []).map(fromFDC).filter(p => p.name);
+      servingG, packageG: parseWeightG(f.packageWeight), pkg: f.packageWeight || "", nutr: n, img: "", dataType: f.dataType };
   }
   const words = s => String(s).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  function rank(list, q) {                              // all query words present in name+brand first, then shorter names (closer to what was typed)
-    const qw = words(q);
-    const sc = p => { const hay = words(p.name + " " + p.brand); const all = qw.every(w => hay.some(h => h === w || h.startsWith(w) || w.startsWith(h) && h.length > 3)); return (all ? 0 : 1000) + p.name.length; };
-    return list.slice().sort((a, b) => sc(a) - sc(b));
+  const singular = w => w.replace(/ies$/, "y").replace(/(?<=[^s])s$/, "");
+  async function byNameFDC(q) {
+    const key = fdcKey(), multi = words(q).length >= 2;
+    const url = `${FDC}/foods/search?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(q)}&dataType=Branded,Foundation,SR%20Legacy&pageSize=50&requireAllWords=${multi}`;
+    const list = await polite("fdc", url, "f:" + q, j => (j && j.foods ? j.foods : []).map(fromFDC).filter(p => p.name));   // cache the slim list, not the raw payload
+    return list || [];
   }
+  /* relevance tiers: 0 exact food name, 1 starts with it, 2 first word is it, 3 contains every word, 4 other */
+  function tier(p, qw, qn) {
+    const primary = words(p.name.split(",")[0]).map(singular).join(" "), all = words(p.name + " " + p.brand).map(singular);
+    if (primary === qn) return 0;
+    if (primary.startsWith(qn)) return 1;
+    if (qw.length === 1 && primary.split(" ")[0] === qw[0]) return 2;
+    if (qw.every(w => all.includes(w))) return 3;
+    return 4;
+  }
+  function rank(list, q) {
+    const qw = words(q).map(singular), qn = qw.join(" ");
+    const gen = p => (p.dataType === "Foundation" || p.dataType === "SR Legacy" ? 0 : 1);
+    const scored = list.map(p => ({ p, t: tier(p, qw, qn) })).sort((a, b) => a.t - b.t || gen(a.p) - gen(b.p) || a.p.name.length - b.p.name.length);
+    const good = scored.filter(x => x.t < 4);
+    return (good.length ? good : scored).map(x => Object.assign(x.p, { _tier: x.t }));
+  }
+  /* group the same product sold in different sizes/packages */
+  const gkey = p => words(p.name).map(singular).join(" ") + "|" + words(p.brand).join(" ");
+  function group(list) {
+    const m = new Map(); list.forEach(p => { const k = gkey(p); if (!m.has(k)) m.set(k, []); m.get(k).push(p); });
+    return [...m.values()].map(v => ({ main: v[0], variants: v }));
+  }
+  function sizeLabel(p) { return [p.pkg || p.qty || "", p.serving ? "serving " + p.serving : ""].filter(Boolean).join(" · ") || (p.code ? "barcode " + p.code : "size not listed"); }
   /* name search: USDA first, Open Food Facts as backup/extra (world products). Either can fail without breaking the other. */
   async function search(q) {
     q = String(q || "").trim().replace(/[^\p{L}\p{N}\s'&.-]/gu, " ").replace(/\s+/g, " ").slice(0, 80); if (q.length < 3) throw new Error("short");
     let out = [], err = null;
+    if (!cget("f:" + q)) spend();
     try { out = await byNameFDC(q); } catch (e) { err = e; }
-    if (out.length < 3) { try { out = out.concat(await byName(q)); } catch (e) { err = err || e; } }
+    if (out.filter(p => tier(p, words(q).map(singular), words(q).map(singular).join(" ")) < 3).length < 3) { try { out = out.concat(await byName(q)); } catch (e) { err = err || e; } }
     const seen = new Set(); out = out.filter(p => { const k = (p.code || "") + "|" + p.name.toLowerCase() + "|" + p.brand.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
     if (!out.length && err) throw err;
-    return rank(out, q).slice(0, 10);
+    return rank(out, q).slice(0, 40);
   }
   function normalize(p) {
     return { code: p.code, name: p.product_name || "", brand: (p.brands || "").split(",")[0], qty: p.quantity || "", ing: p.ingredients_text_en || p.ingredients_text || "",
-      serving: p.serving_size || "", servingG: +p.serving_quantity || 0, nutr: p.nutriments || {}, img: p.image_front_small_url || "", nova: p.nova_group, nutri: p.nutriscore_grade, src: "Open Food Facts" };
+      serving: p.serving_size || "", servingG: +p.serving_quantity || parseWeightG(p.serving_size), packageG: parseWeightG(p.quantity), nutr: p.nutriments || {}, img: p.image_front_small_url || "", nova: p.nova_group, nutri: p.nutriscore_grade, src: "Open Food Facts" };
+  }
+
+  /* grams (or ml) from text like "13.5 oz/382 g", "500 g", "1 L", "6 x 330 ml", "12 fl oz" */
+  function parseWeightG(s) {
+    s = String(s || "").toLowerCase().replace(/,/g, "."); if (!s) return 0;
+    const g = s.match(/(\d+(?:\.\d+)?)\s*(?:g|gr|grams?|ml)\b/); if (g) { const mult = s.match(/(\d+)\s*[x×]\s*\d/); return +g[1] * (mult ? +mult[1] : 1); }
+    const kg = s.match(/(\d+(?:\.\d+)?)\s*kg\b/); if (kg) return +kg[1] * 1000;
+    const l = s.match(/(\d+(?:\.\d+)?)\s*(?:l|liters?|litres?)\b/); if (l) return +l[1] * 1000;
+    const floz = s.match(/(\d+(?:\.\d+)?)\s*fl\.?\s*oz/); if (floz) return +floz[1] * 29.57;
+    const gal = s.match(/(\d+(?:\.\d+)?)\s*(?:gal|gallons?)\b/); if (gal) return +gal[1] * 3785;
+    const qt = s.match(/(\d+(?:\.\d+)?)\s*(?:qt|quarts?)\b/); if (qt) return +qt[1] * 946;
+    const pt = s.match(/(\d+(?:\.\d+)?)\s*(?:pt|pints?)\b/); if (pt) return +pt[1] * 473;
+    const oz = s.match(/(\d+(?:\.\d+)?)\s*oz\b/); if (oz) return +oz[1] * 28.35;
+    const lb = s.match(/(\d+(?:\.\d+)?)\s*(?:lb|lbs|pounds?)\b/); if (lb) return +lb[1] * 453.6;
+    return 0;
   }
 
   /* ---------- nutrition conversion (only fields the product really has) ---------- */
-  function toNutrition(p) {
-    const n = p.nutr || {}, o = {}; let basis = "100g";
-    const g = (k, mult) => { const s = n[k + "_serving"], h = n[k + "_100g"]; return [s, h]; };
-    const useServing = p.servingG > 0 && ["energy-kcal", "proteins", "carbohydrates", "fat"].some(k => n[k + "_serving"] != null);
-    if (useServing) basis = "serving";
-    const val = (k, conv) => {
-      let v = useServing ? (n[k + "_serving"] != null ? n[k + "_serving"] : (n[k + "_100g"] != null ? n[k + "_100g"] * p.servingG / 100 : null)) : n[k + "_100g"];
-      if (v == null || v === "" || isNaN(+v)) return null; v = +v; return conv ? conv(v) : v;
-    };
-    const put = (key, v) => { if (v != null) o[key] = Math.round(v * 100) / 100; };
+  const BASES = p => ["serving", "100g", "package"].filter(b => b === "100g" || (b === "serving" && p.servingG > 0) || (b === "package" && p.packageG > 0));
+  function toNutrition(p, want) {
+    const n = p.nutr || {}, o = {}, bases = BASES(p);
+    const basis = want && bases.includes(want) ? want : (bases.includes("serving") ? "serving" : "100g");
+    const scale = basis === "serving" ? p.servingG / 100 : basis === "package" ? p.packageG / 100 : 1;
+    const per100 = k => { if (n[k + "_100g"] != null && n[k + "_100g"] !== "" && !isNaN(+n[k + "_100g"])) return +n[k + "_100g"]; const s = n[k + "_serving"]; return s != null && s !== "" && p.servingG > 0 && !isNaN(+s) ? +s * 100 / p.servingG : null; };
+    const val = (k, conv) => { let v = per100(k); if (v == null) return null; if (conv) v = conv(v); return v * scale; };
+    const put = (key, v) => { if (v != null && isFinite(v)) o[key] = Math.round(v * 100) / 100; };
     put("cal", val("energy-kcal")); if (o.cal == null) { const kj = val("energy-kj") ?? val("energy"); if (kj != null) put("cal", kj / 4.184); }
     put("fat", val("fat")); put("sat", val("saturated-fat")); put("trans", val("trans-fat"));
     put("chol", val("cholesterol", v => (v <= 3 ? v * 1000 : v)));
@@ -127,8 +161,9 @@
     put("carb", val("carbohydrates")); put("fib", val("fiber")); put("sug", val("sugars")); put("add", val("added-sugars")); put("pro", val("proteins"));
     put("pot", val("potassium", v => (v <= 5 ? v * 1000 : v))); put("calc", val("calcium", v => (v <= 3 ? v * 1000 : v))); put("iron", val("iron", v => (v <= 0.1 ? v * 1000 : v)));
     put("vitd", val("vitamin-d", v => (v < 0.001 ? v * 1e6 : v))); put("caf", val("caffeine", v => (v <= 3 ? v * 1000 : v)));
-    o.basis = basis; if (basis === "serving" && p.serving) o.serving = p.serving; else if (basis === "100g") o.serving = "100 g";
-    o._n = Object.keys(o).filter(k => !["basis", "serving", "_n"].includes(k)).length; return o;
+    o.basis = basis === "100g" ? "100g" : "serving"; o.which = basis; o.bases = bases;
+    o.serving = basis === "serving" ? (p.serving || p.servingG + " g") : basis === "package" ? "whole package (" + Math.round(p.packageG) + " g)" : "100 g";
+    o._n = Object.keys(o).filter(k => !["basis", "serving", "_n", "which", "bases"].includes(k)).length; return o;
   }
 
   /* ---------- ingredient comparison ---------- */
@@ -158,5 +193,5 @@
     return { matched, scanCount: S.length, onlineCount: O.length, unmatched, missing, score, corrected: fixed.join(", "),
       verdict: precision >= 0.9 && coverage >= 0.85 ? "exact" : precision >= 0.6 && coverage >= 0.5 ? "close" : "different" };
   }
-  window.LLOnline = { byBarcode, byName, search, fromFDC, rank, toNutrition, compare, validCode, ean13ok, normalizeKey: key };
+  window.LLOnline = { quota, byBarcode, byName, search, fromFDC, rank, group, sizeLabel, bases: BASES, parseWeightG, tier, toNutrition, compare, validCode, ean13ok, normalizeKey: key };
 })();

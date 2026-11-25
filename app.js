@@ -152,31 +152,39 @@
   /* ----- online match (Open Food Facts) ----- */
   let online = null;
   const findMsg = t => { $("findMsg").textContent = t || ""; };
-  const online_err = e => e && e.keyBad ? "That USDA key was rejected. Clear the key box to use the shared demo key, or paste a valid free key." :
-    e && (e.budget || (e.busy && e.fdc)) ? "The free USDA lookup limit was reached for now. Get a free key at fdc.nal.usda.gov/api-key-signup, paste it in the USDA key box for 1,000 searches an hour, or scan the barcode. Your scan still works." :
+  const online_err = e => e && e.quota ? `You have used all ${LLOnline.quota().cap} searches for this hour on this device. More unlock in about ${e.mins} min. Scanning a barcode and your scan still work.` :
+    e && e.keyBad ? "The search key was rejected, so name search is paused. Barcode lookup and your scan still work." :
+    e && (e.budget || (e.busy && e.fdc)) ? "The food database is busy right now. Try again in a few minutes, or scan the barcode. Your scan still works." :
     e && e.search ? "Name search is unavailable right now (the free service limits it). Scan or type the barcode instead, that is more reliable. Your scan still works." : e && e.cool ? `The online database asked us to slow down. Try again in ${e.cool}s. Your scan still works.` :
     e && e.busy ? "The online database is busy right now. Your scan still works, try again in a minute." :
     e && e.message === "bad code" ? "That does not look like a barcode (8 to 14 digits)." :
     e && e.message === "short" ? "Type at least 3 letters." : "Could not reach the online database" + (e && e.detail ? " (" + e.detail + ")" : "") + ". Check your connection, then try again. Your scan still works.";
+  const quotaTxt = () => { const q = LLOnline.quota(); $("findQuota").textContent = `${q.left} of ${q.cap} searches left this hour on this device`; };
   function cmpNow() { return online && $("ingText").value.trim() && online.ing ? LLOnline.compare($("ingText").value, online.ing) : null; }
-  function showOnline(p, fromList) {
-    online = p; $("findList").innerHTML = fromList ? $("findList").innerHTML : ""; const box = $("onlineBox"); box.hidden = false;
-    const cmp = cmpNow(), nut = LLOnline.toNutrition(p), badge = !cmp ? ["none", "Product found"] : cmp.verdict === "exact" ? ["exact", "Exact match " + cmp.score + "%"] : cmp.verdict === "close" ? ["close", "Close match " + cmp.score + "%"] : ["diff", "Different product " + cmp.score + "%"];
+  let curBasis = "";
+  const BASIS_LABEL = { serving: "Per serving", "100g": "Per 100 g", package: "Whole package" };
+  function showOnline(p) {
+    if (!online || online.code !== p.code || online.name !== p.name) curBasis = "";
+    online = p; document.querySelectorAll("#findList .pick").forEach(b => b.classList.toggle("sel", b._p === p));
+    const box = $("onlineBox"); box.hidden = false;
+    const cmp = cmpNow(), nut = LLOnline.toNutrition(p, curBasis), bases = LLOnline.bases(p), badge = !cmp ? ["none", "Product found"] : cmp.verdict === "exact" ? ["exact", "Exact match " + cmp.score + "%"] : cmp.verdict === "close" ? ["close", "Close match " + cmp.score + "%"] : ["diff", "Different product " + cmp.score + "%"];
     box.innerHTML = `<div class="onl ${badge[0]}">
       ${p.img ? `<img src="${esc(p.img)}" alt="" loading="lazy">` : ""}
-      <div class="onlmeta"><b>${esc(p.name)}</b><small>${esc([p.brand, p.qty, p.src].filter(Boolean).join(" · "))}</small><span class="onlbadge">${esc(badge[1])}</span></div></div>
+      <div class="onlmeta"><b>${esc(p.name)}</b><small>${esc([p.brand, p.pkg || p.qty, p.src].filter(Boolean).join(" · "))}</small><span class="onlbadge">${esc(badge[1])}</span></div></div>
       ${cmp ? `<p class="small">${cmp.matched} of ${cmp.scanCount} scanned ingredients match the online list (${cmp.onlineCount} online).${cmp.unmatched.length ? ` Not found online: <b>${esc(cmp.unmatched.slice(0, 5).join(", "))}</b>.` : ""}${cmp.missing.length ? ` Online but not scanned: ${esc(cmp.missing.slice(0, 4).join(", "))}.` : ""}</p>` : (p.ing ? '<p class="small muted">Scan or paste the ingredient list to compare it with this product.</p>' : '<p class="small muted">This product has no ingredient list online.</p>')}
+      ${nut._n && bases.length > 1 ? `<div class="basisrow">${bases.map(b => `<button class="${nut.which === b ? "on" : ""}" data-b="${b}">${BASIS_LABEL[b]}</button>`).join("")}</div>` : ""}
       <div class="row">
         ${cmp && cmp.corrected !== $("ingText").value ? '<button class="btn primary" id="onlUseFixed">✔ Use verified list</button>' : ""}
         ${p.ing ? '<button class="btn" id="onlUseOnline">Use online ingredients</button>' : ""}
-        ${nut._n ? `<button class="btn" id="onlNut">Fill nutrition (${nut._n} rows)</button>` : ""}
+        ${nut._n ? `<button class="btn primary" id="onlNut">Fill nutrition (${nut._n} rows, ${esc(nut.serving)})</button>` : ""}
       </div>`;
     const on = (id, fn) => { const b = $(id); if (b) b.addEventListener("click", fn); };
     on("onlUseFixed", () => { setIng(cmp.corrected); toast("Ingredient list verified against the online product"); });
     on("onlUseOnline", () => { setIng(p.ing); toast("Using the online ingredient list"); });
-    on("onlNut", () => { setNut(nut); toast("Nutrition filled from the online product"); $("nutCard").scrollIntoView({ behavior: "smooth", block: "center" }); });
+    on("onlNut", () => { setNut(nut); toast("Nutrition filled: " + nut.serving); $("nutCard").scrollIntoView({ behavior: "smooth", block: "center" }); });
+    box.querySelectorAll(".basisrow button").forEach(b => b.addEventListener("click", () => { curBasis = b.dataset.b; const n2 = LLOnline.toNutrition(p, curBasis); setNut(n2); showOnline(p); }));
   }
-  function setIng(t) { liveReveal = true; $("ingText").value = t; $("ingText").dispatchEvent(new Event("input")); setTimeout(() => online && showOnline(online, true), 400); }
+  function setIng(t) { liveReveal = true; $("ingText").value = t; $("ingText").dispatchEvent(new Event("input")); setTimeout(() => online && showOnline(online), 400); }
   let findBusy = false;
   async function guard(btn, fn) {
     if (findBusy) return; findBusy = true; btn.disabled = true;
@@ -190,23 +198,36 @@
   }
   $("findCodeBtn").addEventListener("click", () => guard($("findCodeBtn"), () => lookupCode($("findCode").value)));
   $("findCode").addEventListener("keydown", e => { if (e.key === "Enter") $("findCodeBtn").click(); });
+  function renderPicks(list, scan) {
+    const box = $("findList"); box.innerHTML = "";
+    LLOnline.group(list).slice(0, 25).forEach(g => {
+      const wrap = document.createElement("div"); wrap.className = "resgroup";
+      const mk = (p, label, cls) => {
+        const b = document.createElement("button"); b._p = p; b.className = "pick " + cls;
+        b.innerHTML = label; b.addEventListener("click", () => { showOnline(p); $("onlineBox").scrollIntoView({ behavior: "smooth", block: "nearest" }); }); return b;
+      };
+      const sc = g.main._score >= 0 ? ` · ingredients ${g.main._score}% match` : "";
+      wrap.appendChild(mk(g.main, `<b>${esc(g.main.name)}</b><small>${esc([g.main.brand, g.main.src].filter(Boolean).join(" · "))}${sc}</small>`, "main"));
+      if (g.variants.length > 1) {
+        const row = document.createElement("div"); row.className = "sizes"; row.innerHTML = `<small class="muted">${g.variants.length} sizes / packages:</small>`;
+        g.variants.slice(0, 12).forEach(v => row.appendChild(mk(v, esc(LLOnline.sizeLabel(v)), "size")));
+        wrap.appendChild(row);
+      }
+      box.appendChild(wrap);
+    });
+  }
   $("findNameBtn").addEventListener("click", () => guard($("findNameBtn"), async () => {
     findMsg("Searching… (name search is rate limited, so it can take a few seconds)");
+    $("findList").innerHTML = "";
     let list; try { list = await LLOnline.search($("findName").value); }
-    catch (e) { if (e && (e.cool || e.busy || e.message === "short")) throw e; throw Object.assign(new Error("search"), { search: true }); }
+    catch (e) { if (e && (e.cool || e.busy || e.keyBad || e.quota || e.message === "short")) throw e; quotaTxt(); throw Object.assign(new Error("search"), { search: true }); }
     const scan = $("ingText").value.trim();
     list.forEach(p => { const c = scan && p.ing ? LLOnline.compare(scan, p.ing) : null; p._score = c ? c.score : -1; });
-    list.sort((a, b) => b._score - a._score);
-    const box = $("findList"); box.innerHTML = "";
-    findMsg(list.length ? (scan ? "Best matches first, ranked by how well their ingredients match your scan:" : "Pick a product:") : "Nothing found. Try fewer words or the barcode.");
-    list.forEach(p => {
-      const b = document.createElement("button"); b.className = "toprow";
-      b.innerHTML = `<span><b>${esc(p.name)}</b><small>${esc([p.brand, p.serving].filter(Boolean).join(" · "))}${p._score >= 0 ? " · ingredients " + p._score + "% match" : ""} · ${esc(p.src || "")}</small></span><i>›</i>`;
-      b.addEventListener("click", () => showOnline(p, true)); box.appendChild(b);
-    });
+    if (scan) list.sort((a, b) => (a._tier - b._tier) || (b._score - a._score));
+    findMsg(list.length ? `${list.length} results. Exact names come first, with the sizes and packages they come in. Tap any one, then tap another to compare.` : "Nothing matched. Try one or two key words, or scan the barcode.");
+    renderPicks(list, scan); quotaTxt();
   }));
-  try { $("fdcKey").value = localStorage.getItem("ll_fdc_key") || ""; } catch {}
-  $("fdcKey").addEventListener("change", () => { try { localStorage.setItem("ll_fdc_key", $("fdcKey").value.trim()); } catch {} toast($("fdcKey").value.trim() ? "USDA key saved on this device" : "Using the shared demo key"); });
+  quotaTxt(); setInterval(quotaTxt, 60000);
   $("findName").addEventListener("keydown", e => { if (e.key === "Enter") $("findNameBtn").click(); });
 
   /* ----- barcode reading while the camera runs ----- */
@@ -326,27 +347,31 @@
     camLoop(); barLoop();
   }
   function setupTrack() {                           // continuous focus, light, zoom where the device allows
-    cam.track = cam.stream.getVideoTracks()[0]; $("camLightBtn").hidden = true; $("camZoomWrap").hidden = true;
+    cam.track = cam.stream.getVideoTracks()[0]; cam.torch = false; $("camLightBtn").hidden = false; $("camLightBtn").textContent = "🔦 Light"; $("camLightBtn").classList.remove("on"); $("camZoomWrap").hidden = true;
     let caps = {}; try { caps = cam.track.getCapabilities ? cam.track.getCapabilities() : {}; } catch {}
     const adv = [];
     if (caps.focusMode && caps.focusMode.includes("continuous")) adv.push({ focusMode: "continuous" });
     if (caps.exposureMode && caps.exposureMode.includes("continuous")) adv.push({ exposureMode: "continuous" });
     if (adv.length) cam.track.applyConstraints({ advanced: adv }).catch(() => {});
-    if (caps.torch) { $("camLightBtn").hidden = false; $("camLightBtn").classList.remove("on"); }
     if (caps.zoom) { const z = $("camZoom"); z.min = caps.zoom.min; z.max = Math.min(caps.zoom.max, caps.zoom.min * 4); z.step = caps.zoom.step || 0.1; z.value = caps.zoom.min; $("camZoomWrap").hidden = false; }
   }
+  const adv = o => cam.track.applyConstraints({ advanced: [Object.assign({}, cam.torch ? { torch: true } : {}, o)] });   // always re-send the light state so other changes never switch it off
   function refocus(x, y) {
     const ring = $("camFocus"); ring.style.left = x + "px"; ring.style.top = y + "px"; ring.classList.remove("go"); void ring.offsetWidth; ring.classList.add("go");
     if (!cam.track) return;
-    cam.track.applyConstraints({ advanced: [{ focusMode: "single-shot" }] }).catch(() => {});
-    setTimeout(() => cam.track && cam.track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {}), 1600);
+    adv({ focusMode: "single-shot" }).catch(() => {});
+    setTimeout(() => cam.track && adv({ focusMode: "continuous" }).catch(() => {}), 1600);
   }
   $("camView").addEventListener("click", e => { const r = $("camView").getBoundingClientRect(); refocus(e.clientX - r.left, e.clientY - r.top); });
-  $("camLightBtn").addEventListener("click", async () => {
-    const on = !$("camLightBtn").classList.contains("on");
-    try { await cam.track.applyConstraints({ advanced: [{ torch: on }] }); $("camLightBtn").classList.toggle("on", on); } catch { toast("This camera has no light control"); }
+  $("camLightBtn").addEventListener("click", async e => {
+    e.stopPropagation(); if (!cam.track) return toast("Start the camera first");
+    const on = !cam.torch; let ok = false;
+    for (const c of [{ advanced: [{ torch: on }] }, { torch: on }]) { try { await cam.track.applyConstraints(c); ok = true; break; } catch {} }
+    let real = on; try { const st = cam.track.getSettings ? cam.track.getSettings() : {}; if (ok && "torch" in st) real = !!st.torch; } catch {}
+    if (!ok || (on && !real)) { cam.torch = false; $("camLightBtn").classList.remove("on"); return toast(/iPhone|iPad|iPod/.test(navigator.userAgent) ? "iPhone browsers do not allow the flashlight. Use a lamp or a brighter spot." : "This camera or browser does not allow the flashlight. Try Chrome on Android, or use a brighter spot."); }
+    cam.torch = on; $("camLightBtn").classList.toggle("on", on); $("camLightBtn").textContent = on ? "🔦 Light on" : "🔦 Light";
   });
-  $("camZoom").addEventListener("input", e => cam.track && cam.track.applyConstraints({ advanced: [{ zoom: +e.target.value }] }).catch(() => {}));
+  $("camZoom").addEventListener("input", e => cam.track && adv({ zoom: +e.target.value }).catch(() => {}));
 
   function stopCam() {
     cam.run = false; scanBusy = false;
@@ -415,7 +440,7 @@
     const nut = (read.nut && read.nut._n >= 3) ? read.nut : cam.nut;
     if (read.ing) { liveReveal = true; $("ingText").value = finalizeIng(read.ing, cam); $("ingText").dispatchEvent(new Event("input")); }
     if (nut) setNut(nut);
-    if (online) showOnline(online, true);
+    if (online) showOnline(online);
     const blob = await canvasToBlob(snap, "image/jpeg", 0.82);
     if (blob) { showSnap(blob); currentPhoto = blob; }
     toast(read.ing && nut ? "Locked: ingredients and nutrition captured" : read.ing ? "Locked. Now scan the Nutrition Facts side too, or Analyze" : "Locked nutrition. Now scan the ingredient list");
@@ -579,7 +604,7 @@
   function showTip(el, text, pieceText) {
     const hit = best(text) || (pieceText && best(pieceText));
     let html;
-    if (!hit) html = `<b>${esc(text)}</b><div class="tt-sub">Not in our list yet. Tap it to look in the glossary, or add it under Learn.</div>`;
+    if (!hit) html = `<b>${esc(text)}</b><div class="tt-sub">Not in our list yet. Tap it to research whether it is an ingredient.</div>`;
     else {
       const claims = claimsFor(hit).map(c => `<div class="tt-claim">⚖️ ${esc(F_VERDICT(c))}: ${esc(c.q)}</div>`).join("");
       html = `<div class="tt-head ${hit.color}"><b>${esc(hit.name)}</b> <span>${TAGS[hit.color] || ""}${hit.allergen ? " · allergen" : ""}</span></div>
@@ -619,7 +644,7 @@
         b.appendChild(sp);
       });
       const hit = p.color !== "plain" ? best(p.text) : null;
-      b.addEventListener("click", () => { hideTip(); if (hit) openReason({ entry: hit, found: [p.text] }); else openGlossary(p.text); });
+      b.addEventListener("click", () => { hideTip(); if (hit) openReason({ entry: hit, found: [p.text] }); else openResearch(p.text); });
       box.appendChild(b);
     });
   }
@@ -649,6 +674,13 @@
       row.appendChild(b);
     });
     box.appendChild(row);
+    const unk = [...new Set(pieces.filter(p => p.color === "plain" && /[A-Za-z]{3}/.test(p.text) && !E.matches(p.text).length).map(p => p.text.trim()))].slice(0, 12);
+    if (unk.length) {
+      const u = document.createElement("div"); u.innerHTML = '<p class="muted small">Not in our list yet. Tap one to research it and add it:</p>';
+      const r2 = document.createElement("div"); r2.className = "chips";
+      unk.forEach(w => { const b = document.createElement("button"); b.className = "chip plain"; b.textContent = "🔬 " + (w.length > 38 ? w.slice(0, 36) + "…" : w); b.addEventListener("click", () => openResearch(w)); r2.appendChild(b); });
+      u.appendChild(r2); box.appendChild(u);
+    }
   }
   $("ingText").addEventListener("input", () => { clearTimeout(liveT); liveT = setTimeout(liveScan, 250); });
   setTimeout(liveScan, 0);
@@ -892,12 +924,15 @@
     list.forEach(e => {
       const d = document.createElement("details");
       d.className = "gloss " + e.color; d.id = "g-" + e.name.replace(/\W+/g, "-").toLowerCase();      const alias = [...new Set(e.match.map(m => m.trim()).filter(m => m.length > 2))].join(", ");
-      d.innerHTML = `<summary><span class="dot ${e.color}"></span>${esc(e.name)}<span class="pill ${e.color}">${e.allergen ? "Allergen" : label[e.color]}</span></summary>
+      d.innerHTML = `<summary><span class="dot ${e.color}"></span>${esc(e.name)}<span class="pill ${e.color}">${e.allergen ? "Allergen" : label[e.color]}${e.community ? " · New" : ""}</span></summary>
         <div class="body">
           <p>${esc(e.reason)}</p>
           ${infoBlock(e)}
           ${e.world ? `<div class="worldbox"><b>🌍 Around the world</b><p>${esc(e.world)}</p></div>` : ""}
           ${e.found ? `<p><span class="lbl">Often found in</span>${esc(e.found)}</p>` : ""}
+          ${(e.papers && e.papers.length) || (e.sources && e.sources.length) ? `<div class="infobox"><p><span class="lbl">Research &amp; sources</span>${e.community ? "Added from community research. Titles only, read the study before relying on it." : ""}</p>
+            ${(e.sources || []).map(x => `<p class="srcs"><a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.title)} ↗</a></p>`).join("")}
+            ${(e.papers || []).map(x => `<p class="srcs"><a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.title)} ↗</a>${x.year ? " (" + esc(x.year) + ")" : ""}</p>`).join("")}</div>` : ""}
           <p><span class="lbl">Also listed as</span>${esc(alias)}</p>
         </div>`;
       box.appendChild(d);
@@ -966,6 +1001,63 @@
     const el = document.getElementById("g-" + name.replace(/\W+/g, "-").toLowerCase());
     if (el) { el.open = true; setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 120); }
   }
+
+  /* ----- research a word: is it an ingredient? then add it for this device or suggest it for everyone ----- */
+  function saveCustomEntry(entry) {
+    window.INGREDIENT_DB.push(entry);
+    try { const all = JSON.parse(localStorage.getItem("ll_custom") || "[]"); all.push(entry); localStorage.setItem("ll_custom", JSON.stringify(all)); } catch (e) { toast("Saved for this visit only"); }
+    renderGlossary(); liveScan();
+    if (current) { current = { text: current.text, ...E.analyze(current.text) }; renderResults(); }
+  }
+  let resBusy = false;
+  async function openResearch(term) {
+    term = String(term || "").replace(/[()\[\]%\d]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+    if (term.length < 3) return toast("That is too short to research");
+    const box = $("researchCard"); showTab("scan"); box.hidden = false; box.scrollIntoView({ behavior: "smooth", block: "start" });
+    const known = best(term);
+    if (known) { box.innerHTML = `<h2>${esc(known.name)} is already in the glossary</h2><div class="row"><button class="btn primary" id="resOpen">Open it</button></div>`; $("resOpen").addEventListener("click", () => openGlossary(known.name)); return; }
+    if (resBusy) return toast("Still researching the last word"); resBusy = true;
+    box.innerHTML = `<h2>Researching “${esc(term)}”…</h2><div class="progress thick"><div class="indet"></div></div><p class="muted small">Checking a reference encyclopedia and the PubMed research library. This takes a few seconds and is cached afterwards.</p>`;
+    try {
+      const r = await LLResearch.research(term);
+      const V = { ingredient: ["exact", "Likely a food ingredient"], maybe: ["close", "Possibly an ingredient"], word: ["diff", "Probably just a word, not an ingredient"] }[r.verdict] || ["none", "Could not tell"];
+      box.innerHTML = `<h2>${esc(r.term)}</h2><span class="onlbadge ${V[0]}">${V[1]}</span>
+        ${r.wiki && r.wiki.titleHit ? `<p>${esc(r.wiki.text)}</p><p class="srcs"><a href="${esc(r.wiki.url)}" target="_blank" rel="noopener noreferrer">${esc(r.wiki.title)} on Wikipedia ↗</a></p>` : '<p class="muted">No clear reference article was found for this word.</p>'}
+        ${r.evidence.length ? `<ul class="small">${r.evidence.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+        ${r.papers.length ? `<h3>Research found (${r.paperCount} papers)</h3><p class="muted small">Titles only. Read the study itself before relying on it. This is not medical advice.</p><ul class="small">${r.papers.map(p => `<li><a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${esc(p.title)}</a> <span class="muted">${esc(p.journal)} ${esc(p.year)}</span></li>`).join("")}</ul><p class="srcs"><a href="${esc(r.searchUrl)}" target="_blank" rel="noopener noreferrer">See all on PubMed ↗</a></p>` : ""}
+        <div class="rescat"><label class="small">How should it be marked?
+          <select id="resColor"><option value="neutral">⚪ Neutral (needs review)</option><option value="green">🟢 Good</option><option value="yellow">🟡 Caution</option><option value="red">🔴 Avoid</option></select></label></div>
+        <div class="row"><button class="btn primary" id="resAdd">＋ Add to my app</button><a class="btn" id="resShare" target="_blank" rel="noopener noreferrer">🌍 Suggest for everyone</a><button class="btn" id="resClose">Close</button></div>
+        <p class="muted small">“Add to my app” works right away on this device. “Suggest for everyone” opens a prefilled GitHub request; once a maintainer approves it, it joins the shared glossary for all users.</p>`;
+      const entry = () => LLResearch.draft(r, $("resColor").value);
+      const upd = () => { $("resShare").href = LLResearch.issueUrl(entry()); };
+      $("resColor").addEventListener("change", upd); upd();
+      $("resAdd").addEventListener("click", () => { saveCustomEntry(entry()); toast("Added to your glossary ✔"); box.hidden = true; });
+      $("resClose").addEventListener("click", () => (box.hidden = true));
+    } catch (e) {
+      box.innerHTML = `<h2>Could not research “${esc(term)}”</h2><p class="muted">${e && e.message === "short" ? "That is too short." : "The research sources could not be reached. Check your connection and try again."}</p><div class="row"><button class="btn" id="resClose">Close</button></div>`;
+      $("resClose").addEventListener("click", () => (box.hidden = true));
+    } finally { resBusy = false; }
+  }
+  $("glossResearch").addEventListener("click", () => openResearch($("glossSearch").value));
+
+  /* ----- community ingredients (shared file in the repo, loaded for everyone) ----- */
+  function validCommunity(c) {
+    return c && typeof c.name === "string" && c.name.length <= 80 && Array.isArray(c.match) && c.match.length && c.match.every(m => typeof m === "string" && m.length <= 80) &&
+      ["red", "yellow", "green", "neutral"].includes(c.color) && typeof c.reason === "string" && c.reason.length <= 1200;
+  }
+  const httpsOnly = a => (Array.isArray(a) ? a : []).filter(x => x && typeof x.url === "string" && x.url.startsWith("https://")).slice(0, 8).map(x => ({ title: String(x.title || x.url).slice(0, 200), url: x.url }));
+  fetch("community.json", { cache: "no-cache" }).then(r => (r.ok ? r.json() : [])).then(list => {
+    const have = new Set(window.INGREDIENT_DB.map(e => e.name.toLowerCase())); let n = 0;
+    (Array.isArray(list) ? list : []).forEach(c => {
+      if (!validCommunity(c) || have.has(c.name.toLowerCase())) return;
+      window.INGREDIENT_DB.push({ name: c.name, type: c.color === "green" ? "good" : c.color === "neutral" ? "neutral" : "watch", level: c.color === "red" ? 2 : c.color === "yellow" ? 1 : 0, color: c.color,
+        match: c.match.map(m => m.toLowerCase()), found: String(c.found || "Community added").slice(0, 200), reason: c.reason, world: String(c.world || "").slice(0, 800), community: true,
+        sources: httpsOnly(c.sources), papers: httpsOnly(c.papers) });
+      n++;
+    });
+    if (n) { renderGlossary(); liveScan(); }
+  }).catch(() => {});
 
   loadCustom(); renderGlossary(); renderGuides();
 

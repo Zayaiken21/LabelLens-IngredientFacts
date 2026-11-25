@@ -79,15 +79,14 @@
       <div id="liveScan" class="livescan"></div>
     </div>
 
+    <div class="card" id="researchCard" hidden></div>
+
     <div class="card" id="findCard">
       <h2>Match it online</h2>
-      <p class="muted small">Barcodes are looked up automatically while you scan. You can also type a barcode or any food or drink name. Results come from the free USDA FoodData Central and Open Food Facts databases. Lookups are cached and spaced out so the service is never overloaded.</p>
+      <p class="muted small">Barcodes are looked up automatically while you scan. You can also type a barcode or any food or drink name. Results come from free public food databases. Everyone can try 50 name searches an hour on each device. Lookups are cached and spaced out so the service is never overloaded.</p>
       <div class="row findrow"><input id="findCode" type="text" inputmode="numeric" placeholder="Barcode (8 to 14 digits)"><button class="btn" id="findCodeBtn">Look up</button></div>
       <div class="row findrow"><input id="findName" type="text" placeholder="Any food or drink, e.g. Twinkies"><button class="btn" id="findNameBtn">Search</button></div>
-      <details class="more"><summary>USDA key (optional, raises the search limit)</summary>
-        <p class="muted small">Name search uses USDA FoodData Central (US branded foods, generic foods and drinks) and Open Food Facts (world products). The shared demo key allows about 30 searches an hour. A free key from fdc.nal.usda.gov/api-key-signup allows 1,000. It is saved only on this device.</p>
-        <input id="fdcKey" type="text" placeholder="Paste your free USDA key" autocomplete="off">
-      </details>
+      <p class="muted small" id="findQuota"></p>
       <p class="muted small" id="findMsg"></p>
       <div id="findList"></div>
       <div id="onlineBox" hidden></div>
@@ -264,7 +263,7 @@
         </div>
       </div>
       <div id="glossList"></div>
-      <p id="glossEmpty" class="card center muted" hidden>No matches. Try another name.</p>
+      <div id="glossEmpty" class="card center muted" hidden><p>No matches. Try another name.</p><button class="btn" id="glossResearch">🔬 Research this word online</button></div>
       <details class="card" id="addIngBox">
         <summary>➕ Teach LabelLens a new ingredient</summary>
         <p class="muted small">Found something we don't know yet? Add it. It is saved on this device and used in every scan.</p>
@@ -529,7 +528,9 @@
 <script src="education.js"></script>
 <script src="ingredient-info.js"></script>
 <script src="nutrition.js"></script>
+<script src="config.js"></script>
 <script src="online.js"></script>
+<script src="research.js"></script>
 <script src="app.js"></script>
 <script src="tracker.js"></script>
 <script src="journey.js"></script>

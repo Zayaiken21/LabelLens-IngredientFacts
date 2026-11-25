@@ -1,0 +1,33 @@
+name: Deploy site
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write site key from secret
+        env:
+          FDC_API_KEY: ${{ secrets.FDC_API_KEY }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          key = os.environ.get("FDC_API_KEY", "").strip()
+          open("config.js", "w").write("window.LL_CONFIG = " + json.dumps({"fdcKey": key}) + ";\n")
+          PY
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - uses: actions/deploy-pages@v4

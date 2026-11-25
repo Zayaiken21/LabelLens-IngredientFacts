@@ -28,4 +28,11 @@ Scan the Nutrition Facts panel (or type it in) to capture calories, fats, trans 
 ## Online match
 Barcodes read by the camera (or typed in) and product-name searches are matched against Open Food Facts, a free open database. The scanned ingredient list is compared with the online list (exact / close / different), typos can be corrected from it, and nutrition can be filled from it. Lookups are cached for 14 days, queued with spacing (about 6.5 s between product reads, 9 s between searches), time out after 9 s, and pause for 90 s after any busy or error response, so the service's limits are respected. The scanner works fully without it.
 
-Name search checks USDA FoodData Central first (US branded foods plus generic foods and drinks, with ingredients and nutrition) and Open Food Facts second (world products). A free USDA key can be pasted in the Match it online card to raise the limit from about 30 to 1,000 searches an hour.
+Name search checks USDA FoodData Central first (via the site key) and Open Food Facts second. Each device gets 50 name searches an hour; repeats come from a local cache and are free.
+
+## Setup for the site owner (one time)
+1. Repo **Settings → Secrets and variables → Actions → New repository secret**: name `FDC_API_KEY`, value your key.
+2. **Settings → Pages → Source: GitHub Actions** (the workflow in `.github/workflows/pages.yml` writes the key into `config.js` at deploy time).
+3. Create the issue labels `new-ingredient` and `approved-ingredient`. Applying `approved-ingredient` to a suggestion issue adds it to `community.json` for everyone.
+
+Note: a browser app cannot hide a key. It is visible in the deployed `config.js`, and every visitor shares that key's hourly quota. Use a key you can rotate; a small proxy (for example a Cloudflare Worker) would keep it fully private.

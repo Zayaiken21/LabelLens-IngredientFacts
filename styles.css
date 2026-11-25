@@ -336,3 +336,17 @@ button{font-family:inherit}
 .onl.exact .onlbadge{background:var(--green)}.onl.close .onlbadge{background:var(--yellow)}.onl.diff .onlbadge{background:var(--red)}
 .onl.exact{border-color:var(--green)}.onl.close{border-color:var(--yellow)}.onl.diff{border-color:var(--red)}
 #nutAddSel{margin-top:10px}
+
+/* search results: grouped picks with sizes */
+.resgroup{margin:10px 0;padding:10px;border:1px solid var(--line);border-radius:14px;background:#0e1a2e}
+.pick{display:block;width:100%;text-align:left;cursor:pointer;color:inherit;font:inherit;background:#13233d;border:1px solid var(--line);border-radius:12px;padding:10px 12px;touch-action:manipulation;-webkit-tap-highlight-color:rgba(255,255,255,.15);position:relative;z-index:1}
+.pick b{display:block}.pick small{display:block;opacity:.75;margin-top:2px}
+.pick.sel{border-color:var(--mint);box-shadow:0 0 0 2px rgba(80,220,170,.35)}
+.sizes{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center}
+.pick.size{width:auto;display:inline-block;padding:6px 10px;border-radius:999px;font-size:.82rem}
+.basisrow{display:flex;gap:6px;margin:10px 0;flex-wrap:wrap}
+.basisrow button{flex:1;min-width:90px;padding:8px;border-radius:10px;border:1px solid var(--line);background:#13233d;color:inherit;cursor:pointer}
+.basisrow button.on{background:var(--mint);color:#06101f;font-weight:800}
+#researchCard[hidden],#glossEmpty[hidden],.card[hidden]{display:none}
+#researchCard select{width:100%;margin:6px 0;padding:8px;border-radius:10px}
+#camLightBtn.on{background:#ffd54a;color:#241a00;font-weight:800}
