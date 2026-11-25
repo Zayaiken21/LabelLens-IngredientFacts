@@ -67,15 +67,24 @@
           <button class="btn" id="camStop">Stop</button>
         </div>
         <label class="slider" id="camZoomWrap" hidden>Zoom <input type="range" id="camZoom" min="1" max="3" step="0.1" value="1"></label>
-        <p class="muted small">Tip: tap the picture to refocus. Hold the phone 15 to 25 cm away, and use the light in dim rooms. It reads soft frames too and will offer the best read if the text is hard to see.</p>
+        <p class="muted small">Scan the ingredient list first, then the Nutrition Facts panel. Both are kept. Tip: tap the picture to refocus. Hold the phone 15 to 25 cm away, and use the light in dim rooms. It reads soft frames too and will offer the best read if the text is hard to see.</p>
       </div>
     </div>
 
     <div class="card livecard" id="liveCard">
       <div class="livetop"><h2>Live scan</h2><span class="livestate" id="liveState">Waiting for text</span></div>
       <div class="scanline" id="scanLine"></div>
+      <div id="snapWrap" class="snapwrap" hidden><img id="scanSnap" alt="Scanned item"><span>Scanned item</span></div>
       <div id="liveText" class="highlight livetext"><p class="muted">Read a photo or paste a list below. Each ingredient lights up here: red to avoid, yellow to watch, green good. Hover or tap a word for the reason.</p></div>
       <div id="liveScan" class="livescan"></div>
+    </div>
+
+    <div class="card" id="nutCard">
+      <div class="livetop"><h2>Nutrition per serving</h2><span class="livestate" id="nutState">Scan the Nutrition Facts panel or type it in</span></div>
+      <p class="muted small">Calories, fats, sodium and sugars are tracked here for your daily and weekly totals. They are not ingredients, so they stay out of the ingredient scan.</p>
+      <div id="nutGrid" class="nutgrid"></div>
+      <label class="slider">Servings eaten <input type="number" id="nutServ" value="1" min="0.25" step="0.25" inputmode="decimal"></label>
+      <div class="row"><select id="nutMeal"><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option selected>Snack</option></select><button class="btn primary" id="nutAdd">＋ Add to today's diary</button></div>
     </div>
 
     <div class="card">
@@ -325,7 +334,24 @@
         <input id="fCarb" type="number" inputmode="decimal" min="0" placeholder="Carbs g">
         <input id="fFat" type="number" inputmode="decimal" min="0" placeholder="Fat g">
       </div>
+      <details id="moreNums" class="more">
+        <summary>More nutrients (optional)</summary>
+        <div class="numgrid">
+          <input id="fx_sat" type="number" inputmode="decimal" min="0" placeholder="Saturated fat g">
+          <input id="fx_trans" type="number" inputmode="decimal" min="0" placeholder="Trans fat g">
+          <input id="fx_chol" type="number" inputmode="decimal" min="0" placeholder="Cholesterol mg">
+          <input id="fx_sod" type="number" inputmode="decimal" min="0" placeholder="Sodium mg">
+          <input id="fx_fib" type="number" inputmode="decimal" min="0" placeholder="Fiber g">
+          <input id="fx_sug" type="number" inputmode="decimal" min="0" placeholder="Total sugars g">
+          <input id="fx_add" type="number" inputmode="decimal" min="0" placeholder="Added sugars g">
+        </div>
+      </details>
       <div class="row"><button class="btn primary" id="fAdd">＋ Add to diary</button></div>
+    </div>
+
+    <div id="nutCards">
+      <div class="card"><h2>Nutrients today</h2><p class="muted small">Compared with standard daily values (2,000 calorie diet) unless you set a calorie goal.</p><div id="trkDV"></div></div>
+      <div class="card"><h2>Weekly intake</h2><div id="trkWeekNut"></div></div>
     </div>
 
     <div id="trkList"></div>
@@ -478,6 +504,8 @@
 <script src="ingredients-extra.js"></script>
 <script src="ingredients-more.js"></script>
 <script src="education.js"></script>
+<script src="ingredient-info.js"></script>
+<script src="nutrition.js"></script>
 <script src="app.js"></script>
 <script src="tracker.js"></script>
 <script src="journey.js"></script>

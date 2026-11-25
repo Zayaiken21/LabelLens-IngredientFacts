@@ -310,3 +310,19 @@ button{font-family:inherit}
 @keyframes btnpulse{50%{box-shadow:0 0 0 6px rgba(34,211,166,.35)}}
 .camview{cursor:crosshair}
 .camera,.livecard{scroll-margin-top:72px}
+
+/* ---- snapshot + nutrition ---- */
+.snapwrap{position:relative;margin-top:10px;border-radius:12px;overflow:hidden;border:1px solid rgba(34,211,166,.4);max-height:220px;background:#000}
+.snapwrap img{display:block;width:100%;max-height:220px;object-fit:cover}
+.snapwrap span{position:absolute;left:8px;bottom:8px;background:rgba(8,16,30,.8);padding:2px 10px;border-radius:999px;font-size:.72rem}
+.nutgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.nf{display:flex;flex-direction:column;font-size:.78rem;color:var(--muted)}.nf input{margin-top:4px}
+.nf small{opacity:.7}
+.dvrow{display:grid;grid-template-columns:104px 1fr 92px;gap:8px;align-items:center;margin-top:8px;font-size:.82rem}
+.dvbar{height:10px;border-radius:6px;background:#0e1a2e;overflow:hidden}.dvbar i{display:block;height:100%;border-radius:6px;transition:width .5s ease}
+.dvbar i.green{background:var(--green)}.dvbar i.yellow{background:var(--yellow)}.dvbar i.red{background:var(--red)}
+.dvrow b{text-align:right;font-size:.8rem}.dvrow small{color:var(--muted);font-weight:400}
+.wktab{width:100%;border-collapse:collapse;margin-top:12px;font-size:.8rem}.wktab th,.wktab td{padding:5px 4px;border-bottom:1px solid var(--line);text-align:right}.wktab th:first-child,.wktab td:first-child{text-align:left}
+.more{margin-top:10px}.more .numgrid{margin-top:8px}
+.infobox{margin:10px 0;padding:10px 12px;background:#0e1a2e;border-radius:12px;border:1px solid var(--line)}
+.infobox p{margin:6px 0}

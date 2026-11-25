@@ -67,6 +67,7 @@
     const set = new Set();
     const add = (t, min) => String(t || "").toLowerCase().split(/[^a-z]+/).forEach(w => { if (w.length >= min) set.add(w); });
     (window.INGREDIENT_DB || []).forEach(e => { add(e.name, 4); (e.match || []).forEach(m => add(m, 4)); });
+    if (window.LLNut) window.LLNut.LEX.forEach(w => w.length >= 3 && set.add(w));
     "ingredients contains flavor flavors natural artificial preservative vitamin enriched flour sugar water salt oil palm soybean corn starch syrup extract powder protein concentrate lecithin citric ascorbic acid sodium potassium calcium phosphate sulfate carbonate hydroxide monoglycerides diglycerides vinegar seasoning spices modified wheat niacin riboflavin thiamine folic cellulose gluten dextrose maltodextrin glycerin milk eggs egg soy rice oats butter cream yeast cocoa honey whey nuts peanuts almonds garlic onion pepper tomato lemon juice color colour gum pectin may contain traces less than reduced iron zinc".split(" ").forEach(w => w.length >= 3 && set.add(w));
     return set;
   }
@@ -117,26 +118,27 @@
     const lines = (data.lines && data.lines.length ? data.lines : [{ words: wordsOf(data), text: data.text }]);
     const keep = [];
     lines.forEach(l => {
-      const ws = (l.words || []).filter(w => (w.confidence || 0) >= 40 && /[A-Za-z]{2}/.test(w.text));
+      const ws = (l.words || []).filter(w => { const c = w.confidence || 0; return (c >= 40 && /[A-Za-z]{2}/.test(w.text)) || (c >= 50 && /^[\d.,%]+[a-z]{0,3}$/i.test(w.text)); });
       if (!ws.length) return;
       const txt = ws.map(w => w.text).join(" ");
       const letters = (txt.match(/[A-Za-z0-9,()%.\-]/g) || []).length / txt.length;
       const conf = ws.reduce((a, w) => a + w.confidence, 0) / ws.length;
-      if (letters >= 0.7 && conf >= 48 && txt.length >= 4) keep.push(txt);
+      if (letters >= 0.7 && conf >= 48 && txt.length >= 3) keep.push(txt);
     });
-    let text = cleanOCR(keep.join(" "));
-    text = correctWords(text);                     // blur-tolerant: snap near-miss words first
-    const toks = text.toLowerCase().split(/[^a-z]+/).filter(w => w.length >= 3);
+    const raw = correctWords(cleanOCR(keep.join(" ")));
+    const N = window.LLNut, nut = N.parse(raw), ex = N.extractIngredients(raw);
+    const toks = ex.text.toLowerCase().split(/[^a-z]+/).filter(w => w.length >= 3);
     const hits = toks.filter(w => vocabSet.has(w)).length;
-    const hasHeading = /ingredi|ingred|contains/i.test(text);
-    const ok = text.length >= 10 && (hasHeading ? hits >= 1 : hits >= 2 && hits / Math.max(1, toks.length) >= 0.12);
-    return { text, ok, hits, total: toks.length };
+    const ingOk = ex.count >= 1 && ex.text.length >= 10 && (ex.hasHeading ? hits >= 1 : hits >= 2 && hits / Math.max(1, toks.length) >= 0.2);
+    const nutOk = nut._n >= 3;
+    const text = ingOk ? ex.text : nutOk ? "Nutrition: " + N.FIELDS.filter(f => nut[f.k] != null).map(f => f.label + " " + nut[f.k]).join(", ") : ex.text;
+    return { text, ing: ingOk ? ex.text : "", nut: nutOk ? nut : null, ok: ingOk || nutOk, hits: ingOk ? hits : nutOk ? nut._n : hits, total: toks.length };
   }
   const wordSet = t => new Set(t.toLowerCase().split(/[^a-z]+/).filter(w => w.length >= 3));
   const jaccard = (a, b) => { let i = 0; a.forEach(x => b.has(x) && i++); return i / Math.max(1, a.size + b.size - i); };
 
   /* ----- live camera scanner ----- */
-  const cam = { stream: null, track: null, run: false, worker: null, last: "", stable: 0, bestRead: "", cand: "", candHits: 0, t0: 0, n: 0, locking: false };
+  const cam = { stream: null, track: null, run: false, worker: null, last: "", stable: 0, bestRead: null, cand: null, candHits: 0, t0: 0, n: 0, locking: false, nut: null };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const hud = (t, state) => { $("camHud").textContent = t; if (state) $("camView").dataset.state = state; };
 
@@ -205,7 +207,7 @@
     await new Promise(r => (v.onloadedmetadata = r)); try { await v.play(); } catch {}
     $("camView").style.aspectRatio = v.videoWidth + " / " + v.videoHeight;
     setupTrack();
-    Object.assign(cam, { run: true, last: "", stable: 0, bestRead: "", cand: "", candHits: 0, t0: Date.now(), n: 0, locking: false });
+    Object.assign(cam, { run: true, last: "", stable: 0, bestRead: null, cand: null, candHits: 0, t0: Date.now(), n: 0, locking: false, nut: null });
     scanBusy = true; $("camCapture").classList.remove("pulse"); $("camCapture").textContent = "🔒 Lock now";
     $("liveCard").classList.add("scanning"); $("liveState").textContent = "Scanning…";
     $("camBox").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -257,7 +259,8 @@
         const { data } = await cam.worker.recognize(classicPrep(src));
         if (!cam.run) break;
         const r = filterOCR(data), secs = (Date.now() - cam.t0) / 1000;
-        if (r.hits >= 2 && r.hits >= cam.candHits) { cam.cand = r.text; cam.candHits = r.hits; }
+        if (r.nut && (!cam.nut || r.nut._n >= cam.nut._n)) cam.nut = r.nut;
+        if (r.hits >= 2 && r.hits >= cam.candHits) { cam.cand = r; cam.candHits = r.hits; }
         if (!r.ok) {
           cam.stable = 0; cam.last = "";
           $("scanStatus").textContent = r.hits ? "Partly readable, keep going" : "Looking for an ingredient list…";
@@ -267,12 +270,12 @@
         } else {
           const same = cam.last && jaccard(wordSet(r.text), wordSet(cam.last)) >= 0.55;
           cam.stable = same ? cam.stable + 1 : 0; cam.last = r.text;
-          if (!same || r.text.length >= cam.bestRead.length * 0.8) cam.bestRead = r.text;
+          if (!same || r.text.length >= ((cam.bestRead && cam.bestRead.text) || "").length * 0.8) cam.bestRead = r;
           $("camLive").textContent = r.text.length > 220 ? r.text.slice(0, 217) + "…" : r.text;
           setBar($("scanBar"), Math.min(100, 35 + cam.stable * 40));
-          $("scanStatus").textContent = cam.stable ? "Steady, locking…" : "Ingredient list found";
-          hud(cam.stable ? "Steady… locking" : "Ingredient list found", cam.stable ? "steady" : "found");
-          if (cam.stable >= 1 && (r.hits >= 4 || cam.stable >= 2)) return lockScan(cam.bestRead || r.text);
+          $("scanStatus").textContent = cam.stable ? "Steady, locking…" : (r.ing ? "Ingredient list found" : "Nutrition panel found");
+          hud(cam.stable ? "Steady… locking" : (r.ing ? "Ingredient list found" : "Nutrition panel found"), cam.stable ? "steady" : "found");
+          if (cam.stable >= 1 && (r.hits >= 4 || cam.stable >= 2)) return lockScan(cam.bestRead || r);
         }
         // never get stuck: offer, then use, the best partial read
         const best = cam.bestRead || cam.cand;
@@ -282,19 +285,55 @@
       }
     } catch (err) { console.error(err); toast("Scanner problem. Try again or use a photo."); stopCam(); }
   }
-  async function lockScan(text) {
+  function snapshotOf(src) {                       // small JPEG of the actual item that was scanned
+    const w = src.videoWidth || src.width, h = src.videoHeight || src.height, k = Math.min(1, 900 / Math.max(w, h));
+    const c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(h * k);
+    c.getContext("2d").drawImage(src, 0, 0, c.width, c.height); return c;
+  }
+  async function lockScan(read, snapSrc) {
     if (cam.locking) return; cam.locking = true; cam.run = false;
+    const snap = snapshotOf(snapSrc || $("camVideo"));
     if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
     setBar($("scanBar"), 100); $("scanStatus").textContent = "Locked";
     $("camView").dataset.state = "locked"; $("camLockBadge").hidden = false; hud("Locked ✔", "locked");
     try { $("camVideo").pause(); } catch {}
     await sleep(1100);
     stopCam(); $("camLockBadge").hidden = true; cam.locking = false;
-    const out = correctWords(text);
-    liveReveal = true; $("ingText").value = out; $("ingText").dispatchEvent(new Event("input"));
-    toast("Locked. Check the live scan, then Analyze");
+    const nut = (read.nut && read.nut._n >= 3) ? read.nut : cam.nut;
+    if (read.ing) { liveReveal = true; $("ingText").value = read.ing; $("ingText").dispatchEvent(new Event("input")); }
+    if (nut) setNut(nut);
+    const blob = await canvasToBlob(snap, "image/jpeg", 0.82);
+    if (blob) { showSnap(blob); currentPhoto = blob; }
+    toast(read.ing && nut ? "Locked: ingredients and nutrition captured" : read.ing ? "Locked. Now scan the Nutrition Facts side too, or Analyze" : "Locked nutrition. Now scan the ingredient list");
     $("liveCard").scrollIntoView({ behavior: "smooth", block: "start" });
   }
+  function showSnap(blob) {
+    const img = $("scanSnap"); if (img.dataset.u) URL.revokeObjectURL(img.dataset.u);
+    img.dataset.u = URL.createObjectURL(blob); img.src = img.dataset.u; $("snapWrap").hidden = false;
+  }
+
+  /* ----- nutrition panel (tracked, never treated as ingredients) ----- */
+  let nutVals = {};
+  function buildNutGrid() {
+    $("nutGrid").innerHTML = window.LLNut.FIELDS.map(f => `<label class="nf"><span>${f.label} <small>${f.unit}</small></span><input type="number" min="0" step="any" inputmode="decimal" data-nk="${f.k}"></label>`).join("");
+    $("nutGrid").querySelectorAll("input").forEach(i => i.addEventListener("input", () => { nutVals[i.dataset.nk] = i.value === "" ? undefined : +i.value; $("nutState").textContent = "Edited"; }));
+  }
+  function setNut(n) {
+    nutVals = {};
+    $("nutGrid").querySelectorAll("input").forEach(i => { const v = n[i.dataset.nk]; i.value = v == null ? "" : v; nutVals[i.dataset.nk] = v == null ? undefined : v; });
+    $("nutState").textContent = "Read from label" + (n.serving ? " · serving " + n.serving : "");
+  }
+  buildNutGrid();
+  $("nutAdd").addEventListener("click", () => {
+    if (!window.LL.addFood) return toast("Tracker not ready");
+    const has = Object.keys(nutVals).some(k => nutVals[k] != null);
+    if (!has) return toast("Scan or type some nutrition numbers first");
+    const serv = +$("nutServ").value || 1;
+    const name = $("itemName").value.trim() || (current && current.tokens[0] ? "Scanned item" : "Scanned item");
+    const color = current ? (current.score >= 70 ? "green" : current.score >= 40 ? "yellow" : "red") : "yellow";
+    window.LL.addFood({ name, meal: $("nutMeal").value, color, serv, nut: { ...nutVals } });
+    toast("Added to today's diary ✔ (" + serv + " serving" + (serv === 1 ? "" : "s") + ")");
+  });
   $("camStart").addEventListener("click", startCam);
   $("camStop").addEventListener("click", stopCam);
   $("camCapture").addEventListener("click", () => {
@@ -317,7 +356,7 @@
       const { data } = await cam.worker.recognize(classicPrep(c));
       const r = filterOCR(data);
       if (!r.ok) { $("liveState").textContent = "No ingredient list found"; return toast("No ingredient list found in that photo. Try the live scanner and fit the list in the frame."); }
-      lockScan(r.text);
+      lockScan(r, c);
     } catch (err) { console.error(err); toast("Could not read that photo"); }
     finally { $("liveCard").classList.remove("scanning"); }
   });
@@ -708,13 +747,24 @@
   ===================================================== */
   let gFilter = "all";
 
+  function infoBlock(e) {
+    const i = (window.INGREDIENT_INFO || {})[e.name]; if (!i) return "";
+    const q = encodeURIComponent(e.name.replace(/\(.*?\)/g, "").replace(/^Allergen:\s*/, "").trim());
+    return `<div class="infobox">
+      <p><span class="lbl">What it is</span>${esc(i[0])}</p>
+      <p><span class="lbl">How it is made</span>${esc(i[1])}</p>
+      <p><span class="lbl">Why it is used</span>${esc(i[2])}</p>
+      <p><span class="lbl">Better choice</span>${esc(i[3])}</p>
+      <p class="srcs"><a href="https://pubchem.ncbi.nlm.nih.gov/#query=${q}" target="_blank" rel="noopener noreferrer">Chemistry on PubChem ↗</a> · <a href="https://apps.who.int/food-additives-contaminants-jecfa-database/" target="_blank" rel="noopener noreferrer">WHO JECFA additive database ↗</a></p>
+    </div>`;
+  }
   function renderGlossary() {
     const q = $("glossSearch").value.trim().toLowerCase();
     const db = window.INGREDIENT_DB.slice().sort((a, b) => a.name.localeCompare(b.name));
     $("gAll").textContent = db.length;
     ["red", "yellow", "green", "neutral"].forEach(c => $("g" + c[0].toUpperCase() + c.slice(1)).textContent = db.filter(e => e.color === c).length);
     const list = db.filter(e => (gFilter === "all" || e.color === gFilter) &&
-      (!q || (e.name + " " + e.match.join(" ") + " " + (e.found || "") + " " + e.reason).toLowerCase().includes(q)));
+      (!q || (e.name + " " + e.match.join(" ") + " " + (e.found || "") + " " + e.reason + " " + ((window.INGREDIENT_INFO || {})[e.name] || []).join(" ")).toLowerCase().includes(q)));
     const box = $("glossList"); box.innerHTML = "";
     $("glossEmpty").hidden = list.length > 0;
     const label = { red: "Avoid", yellow: "Caution", green: "Good", neutral: "Neutral" };
@@ -724,6 +774,7 @@
       d.innerHTML = `<summary><span class="dot ${e.color}"></span>${esc(e.name)}<span class="pill ${e.color}">${e.allergen ? "Allergen" : label[e.color]}</span></summary>
         <div class="body">
           <p>${esc(e.reason)}</p>
+          ${infoBlock(e)}
           ${e.world ? `<div class="worldbox"><b>🌍 Around the world</b><p>${esc(e.world)}</p></div>` : ""}
           ${e.found ? `<p><span class="lbl">Often found in</span>${esc(e.found)}</p>` : ""}
           <p><span class="lbl">Also listed as</span>${esc(alias)}</p>

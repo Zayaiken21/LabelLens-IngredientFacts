@@ -27,6 +27,45 @@
     d.entries.forEach(e => { t.cal += num(e.cal); t.pro += num(e.pro); t.carb += num(e.carb); t.fat += num(e.fat); t[e.color] = (t[e.color] || 0) + 1; });
     return t;
   }
+  const NF = window.LLNut ? window.LLNut.FIELDS : [];
+  const XK = ["sat", "trans", "chol", "sod", "fib", "sug", "add"];
+  function nutTotals(d) {          // all tracked nutrients for one day
+    const o = { cal: 0, fat: 0, sat: 0, trans: 0, chol: 0, sod: 0, carb: 0, fib: 0, sug: 0, add: 0, pro: 0 };
+    (d ? d.entries : []).forEach(e => {
+      o.cal += num(e.cal); o.fat += num(e.fat); o.carb += num(e.carb); o.pro += num(e.pro);
+      XK.forEach(k => (o[k] += num(e.x && e.x[k])));
+    });
+    return o;
+  }
+  const fmt = (k, v) => (k === "cal" || k === "sod" || k === "chol" ? Math.round(v) : Math.round(v * 10) / 10);
+  const calGoal = () => num(goals.cal) || 2000;
+  const dvOf = f => (f.k === "cal" ? calGoal() : f.dv);
+  const tone = (f, pct) => f.good ? (pct >= 100 ? "green" : pct >= 50 ? "yellow" : "red") : (pct <= 60 ? "green" : pct <= 100 ? "yellow" : "red");
+  function bars(tot, days) {
+    return NF.filter(f => dvOf(f) > 0 && tot[f.k] != null).map(f => {
+      const v = tot[f.k] / (days || 1), dv = dvOf(f), pct = Math.round((v / dv) * 100);
+      return `<div class="dvrow"><span>${f.label}</span><div class="dvbar"><i class="${tone(f, pct)}" style="width:${Math.min(100, pct)}%"></i></div><b>${fmt(f.k, v)}${f.unit === "kcal" ? "" : f.unit} <small>${pct}%</small></b></div>`;
+    }).join("");
+  }
+  function renderNutrition() {
+    const box = $("trkDV"), wk = $("trkWeekNut"), card = $("nutCards"); card.hidden = hideNums; if (hideNums) return;
+    const d = diary[date], tot = nutTotals(d);
+    box.innerHTML = (d && d.entries.length ? bars(tot, 1) : '<p class="muted small">Log foods with nutrition numbers (scan a Nutrition Facts panel) to see your daily values.</p>') +
+      (tot.trans ? `<p class="muted small">Trans fat today: ${fmt("trans", tot.trans)} g. It has no daily value, so keep it as low as you can.</p>` : "");
+    // last 7 days
+    const week = { cal: 0, fat: 0, sat: 0, trans: 0, chol: 0, sod: 0, carb: 0, fib: 0, sug: 0, add: 0, pro: 0 }; let logged = 0;
+    for (let i = 0; i < 7; i++) { const dd = diary[shift(todayKey(), -i)]; if (dd && dd.entries.length) { logged++; const x = nutTotals(dd); Object.keys(week).forEach(k => (week[k] += x[k])); } }
+    wk.innerHTML = logged ? `<p class="muted small">${logged} day${logged === 1 ? "" : "s"} logged in the last 7. Daily average:</p>` + bars(week, logged) +
+      `<table class="wktab"><tr><th></th><th>Week total</th><th>Daily avg</th></tr>` + NF.map(f => `<tr><td>${f.label}</td><td>${fmt(f.k, week[f.k])} ${f.unit}</td><td>${fmt(f.k, week[f.k] / logged)} ${f.unit}</td></tr>`).join("") + `</table>`
+      : '<p class="muted small">Nothing logged this week yet.</p>';
+  }
+  function addFood(o) {            // called from the scanner: scales a serving by servings eaten
+    const s = o.serv || 1, n = o.nut || {}, sc = k => (n[k] == null ? "" : Math.round(n[k] * s * 10) / 10);
+    const x = {}; XK.forEach(k => { if (n[k] != null) x[k] = Math.round(n[k] * s * 10) / 10; });
+    day(todayKey()).entries.push({ meal: o.meal || "Snack", name: o.name + (s !== 1 ? " ×" + s : ""), color: o.color || "yellow", cal: sc("cal"), pro: sc("pro"), carb: sc("carb"), fat: sc("fat"), x });
+    save("ll_diary", diary); date = todayKey(); render();
+  }
+  LL.addFood = addFood;
 
   /* ---------- render ---------- */
   function render() {
@@ -83,6 +122,8 @@
     }));
 
     $("trkNote").value = d.note || "";
+    $("moreNums").hidden = hideNums;
+    renderNutrition();
     renderWeek();
   }
 
@@ -116,10 +157,11 @@
     if (!name) return toast("What did you eat?");
     day().entries.push({
       meal: $("fMeal").value, name, color: $("fColor").value,
-      cal: $("fCal").value, pro: $("fPro").value, carb: $("fCarb").value, fat: $("fFat").value
+      cal: $("fCal").value, pro: $("fPro").value, carb: $("fCarb").value, fat: $("fFat").value,
+      x: Object.fromEntries(XK.map(k => [k, num($("fx_" + k).value)]).filter(([, v]) => v))
     });
     save("ll_diary", diary);
-    ["fName", "fCal", "fPro", "fCarb", "fFat"].forEach(i => ($(i).value = ""));
+    ["fName", "fCal", "fPro", "fCarb", "fFat"].concat(XK.map(k => "fx_" + k)).forEach(i => ($(i).value = ""));
     $("fSaved").value = "";
     render(); toast("Added ✔");
   });
@@ -157,9 +199,9 @@
   $("hideNums").addEventListener("change", () => { hideNums = $("hideNums").checked; save("ll_hidenums", hideNums); render(); });
 
   $("trkExport").addEventListener("click", () => {
-    const rows = [["date", "meal", "food", "color", "calories", "protein_g", "carbs_g", "fat_g"]];
+    const rows = [["date", "meal", "food", "color", "calories", "protein_g", "carbs_g", "fat_g", "sat_fat_g", "trans_fat_g", "cholesterol_mg", "sodium_mg", "fiber_g", "sugars_g", "added_sugars_g"]];
     Object.keys(diary).sort().forEach(k => diary[k].entries.forEach(e =>
-      rows.push([k, e.meal, '"' + String(e.name).replace(/"/g, '""') + '"', e.color, e.cal || "", e.pro || "", e.carb || "", e.fat || ""])));
+      rows.push([k, e.meal, '"' + String(e.name).replace(/"/g, '""') + '"', e.color, e.cal || "", e.pro || "", e.carb || "", e.fat || ""].concat(XK.map(k => (e.x && e.x[k]) || "")))));
     if (rows.length === 1) return toast("Nothing to export yet");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([rows.map(r => r.join(",")).join("\n")], { type: "text/csv" }));

@@ -14,10 +14,13 @@ Scan the back of any product, see what is really inside, and save it for later. 
 - **Change**: a 90-day life-change program with three phases, daily habit check-ins, streaks, a 90-day map, weekly reviews, if-then plans, body/energy log and milestones.
 
 ## Files
-`index.html`, `styles.css`, `app.js`, `crop.js`, `cutout.js`, `facts.js`, `facts-data.js`, `facts-more.js`, `ingredients-more.js`, `sw.js`, `manifest.webmanifest`, `tracker.js`, `journey.js`, `ingredients.js` (engine and core database), `ingredients-extra.js` (more additives, neutral ingredients, allergens), `education.js` (guides).
+`index.html`, `styles.css`, `app.js`, `crop.js`, `cutout.js`, `facts.js`, `nutrition.js`, `ingredient-info.js`, `facts-data.js`, `facts-more.js`, `ingredients-more.js`, `sw.js`, `manifest.webmanifest`, `tracker.js`, `journey.js`, `ingredients.js` (engine and core database), `ingredients-extra.js` (more additives, neutral ingredients, allergens), `education.js` (guides).
 
 ## Publish with GitHub Pages
 Settings → Pages → Build and deployment → Deploy from a branch → `main` / `(root)` → Save.
 
 ## Disclaimer
 General consumer information drawn from WHO, EFSA, IARC, JECFA, UK FSA, Health Canada, US FDA and national guidelines. Not medical advice. Always read allergen statements on the package.
+
+## Nutrition tracking
+Scan the Nutrition Facts panel (or type it in) to capture calories, fats, trans fat, cholesterol, sodium, carbs, fiber, sugars, added sugars and protein. Add servings to your diary and see daily values and weekly totals and averages in the Track tab. Nutrition rows are kept out of the ingredient scan.
