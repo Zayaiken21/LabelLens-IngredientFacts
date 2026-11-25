@@ -55,13 +55,19 @@
           <video id="camVideo" playsinline muted autoplay></video>
           <div class="guide" id="camGuide"><i></i><i></i><i></i><i></i><span class="beam"></span></div>
           <div class="camhud" id="camHud">Starting camera…</div>
+          <div class="camqual" id="camQual" data-q="mid"></div>
+          <div class="camfocus" id="camFocus"></div>
+          <div class="lockbadge" id="camLockBadge" hidden><b>🔒</b><span>LOCKED</span></div>
         </div>
         <div id="scanProgress" class="progress thick"><div id="scanBar"></div><span id="scanStatus">Starting…</span></div>
         <div class="camlive" id="camLive"></div>
-        <div class="row">
+        <div class="row camctl">
           <button class="btn primary" id="camCapture">🔒 Lock now</button>
+          <button class="btn" id="camLightBtn" hidden>🔦 Light</button>
           <button class="btn" id="camStop">Stop</button>
         </div>
+        <label class="slider" id="camZoomWrap" hidden>Zoom <input type="range" id="camZoom" min="1" max="3" step="0.1" value="1"></label>
+        <p class="muted small">Tip: tap the picture to refocus. Hold the phone 15 to 25 cm away, and use the light in dim rooms. It reads soft frames too and will offer the best read if the text is hard to see.</p>
       </div>
     </div>
 

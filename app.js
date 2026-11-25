@@ -117,32 +117,83 @@
     const lines = (data.lines && data.lines.length ? data.lines : [{ words: wordsOf(data), text: data.text }]);
     const keep = [];
     lines.forEach(l => {
-      const ws = (l.words || []).filter(w => (w.confidence || 0) >= 62 && /[A-Za-z]{2}/.test(w.text));
+      const ws = (l.words || []).filter(w => (w.confidence || 0) >= 40 && /[A-Za-z]{2}/.test(w.text));
       if (!ws.length) return;
       const txt = ws.map(w => w.text).join(" ");
-      const letters = (txt.match(/[A-Za-z0-9,()]/g) || []).length / txt.length;
+      const letters = (txt.match(/[A-Za-z0-9,()%.\-]/g) || []).length / txt.length;
       const conf = ws.reduce((a, w) => a + w.confidence, 0) / ws.length;
-      if (letters >= 0.8 && conf >= 68 && txt.length >= 4) keep.push(txt);
+      if (letters >= 0.7 && conf >= 48 && txt.length >= 4) keep.push(txt);
     });
-    const text = cleanOCR(keep.join(" "));
+    let text = cleanOCR(keep.join(" "));
+    text = correctWords(text);                     // blur-tolerant: snap near-miss words first
     const toks = text.toLowerCase().split(/[^a-z]+/).filter(w => w.length >= 3);
     const hits = toks.filter(w => vocabSet.has(w)).length;
-    const hasHeading = /ingredient/i.test(text);
-    const ok = text.length >= 12 && (hasHeading ? hits >= 1 : hits >= 3 && hits / Math.max(1, toks.length) >= 0.25);
+    const hasHeading = /ingredi|ingred|contains/i.test(text);
+    const ok = text.length >= 10 && (hasHeading ? hits >= 1 : hits >= 2 && hits / Math.max(1, toks.length) >= 0.12);
     return { text, ok, hits, total: toks.length };
   }
   const wordSet = t => new Set(t.toLowerCase().split(/[^a-z]+/).filter(w => w.length >= 3));
   const jaccard = (a, b) => { let i = 0; a.forEach(x => b.has(x) && i++); return i / Math.max(1, a.size + b.size - i); };
 
   /* ----- live camera scanner ----- */
-  const cam = { stream: null, run: false, worker: null, last: "", stable: 0, bestRead: "" };
+  const cam = { stream: null, track: null, run: false, worker: null, last: "", stable: 0, bestRead: "", cand: "", candHits: 0, t0: 0, n: 0, locking: false };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-  const hud = t => ($("camHud").textContent = t);
+  const hud = (t, state) => { $("camHud").textContent = t; if (state) $("camView").dataset.state = state; };
+
+  function sharpness(canvas) {                      // variance of the Laplacian on a small grayscale copy
+    const w = 320, h = Math.max(24, Math.round(canvas.height * 320 / canvas.width));
+    const t = document.createElement("canvas"); t.width = w; t.height = h;
+    const tc = t.getContext("2d", { willReadFrequently: true }); tc.drawImage(canvas, 0, 0, w, h);
+    const d = tc.getImageData(0, 0, w, h).data, g = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) g[i] = d[i * 4] * 0.3 + d[i * 4 + 1] * 0.59 + d[i * 4 + 2] * 0.11;
+    let sum = 0, sq = 0, n = 0;
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x, l = 4 * g[i] - g[i - 1] - g[i + 1] - g[i - w] - g[i + w]; sum += l; sq += l * l; n++;
+    }
+    const m = sum / n; return sq / n - m * m;
+  }
+  function lumaMean(canvas) {
+    const t = document.createElement("canvas"); t.width = 32; t.height = 16; const c = t.getContext("2d"); c.drawImage(canvas, 0, 0, 32, 16);
+    const d = c.getImageData(0, 0, 32, 16).data; let s = 0; for (let i = 0; i < d.length; i += 4) s += d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; return s / 512;
+  }
+  /* levels stretch + unsharp mask: rescues dim and soft frames */
+  function enhanceFrame(c, soft) {
+    const w = c.width, h = c.height, ctx = c.getContext("2d"), img = ctx.getImageData(0, 0, w, h);
+    const g = LLCrop.toGray(img.data, w * h); LLCrop.stretch(g, 0.01, 0.99);
+    let out = g;
+    if (soft) {
+      out = new Uint8ClampedArray(g.length);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = y * w + x; let s = 0, k = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < w && yy < h) { s += g[yy * w + xx]; k++; } }
+        const v = g[i] + 1.6 * (g[i] - s / k); out[i] = v < 0 ? 0 : v > 255 ? 255 : v;
+      }
+    }
+    for (let i = 0, j = 0; i < w * h; i++, j += 4) { img.data[j] = img.data[j + 1] = img.data[j + 2] = out[i]; img.data[j + 3] = 255; }
+    ctx.putImageData(img, 0, 0); return c;
+  }
+  function grabROI() {
+    const v = $("camVideo"), vw = v.videoWidth, vh = v.videoHeight;
+    const sx = vw * 0.04, sy = vh * 0.22, sw = vw * 0.92, sh = vh * 0.56;
+    const c = document.createElement("canvas"), k = Math.min(1, 1800 / sw);
+    c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+    c.getContext("2d", { willReadFrequently: true }).drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    return c;
+  }
+  async function bestOfBurst() {                    // take a few quick frames, keep the sharpest
+    let best = null;
+    for (let i = 0; i < 3 && cam.run; i++) {
+      const c = grabROI(), sh = sharpness(c);
+      if (!best || sh > best.sh) best = { c, sh };
+      if (i < 2) await sleep(90);
+    }
+    return best;
+  }
 
   async function startCam() {
     if (!window.Tesseract) return toast("Reader is still loading. Try again in a moment.");
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return toast("Camera is not available here. Use a photo instead.");
-    $("camBox").hidden = false; hud("Starting camera…"); $("camLive").textContent = "";
+    $("camBox").hidden = false; hud("Starting camera…", "search"); $("camLive").textContent = "";
     $("camStart").disabled = true;
     try {
       cam.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
@@ -153,55 +204,92 @@
     const v = $("camVideo"); v.srcObject = cam.stream;
     await new Promise(r => (v.onloadedmetadata = r)); try { await v.play(); } catch {}
     $("camView").style.aspectRatio = v.videoWidth + " / " + v.videoHeight;
-    cam.run = true; cam.last = ""; cam.stable = 0; cam.bestRead = ""; scanBusy = true;
+    setupTrack();
+    Object.assign(cam, { run: true, last: "", stable: 0, bestRead: "", cand: "", candHits: 0, t0: Date.now(), n: 0, locking: false });
+    scanBusy = true; $("camCapture").classList.remove("pulse"); $("camCapture").textContent = "🔒 Lock now";
     $("liveCard").classList.add("scanning"); $("liveState").textContent = "Scanning…";
     $("camBox").scrollIntoView({ behavior: "smooth", block: "start" });
     camLoop();
   }
+  function setupTrack() {                           // continuous focus, light, zoom where the device allows
+    cam.track = cam.stream.getVideoTracks()[0]; $("camLightBtn").hidden = true; $("camZoomWrap").hidden = true;
+    let caps = {}; try { caps = cam.track.getCapabilities ? cam.track.getCapabilities() : {}; } catch {}
+    const adv = [];
+    if (caps.focusMode && caps.focusMode.includes("continuous")) adv.push({ focusMode: "continuous" });
+    if (caps.exposureMode && caps.exposureMode.includes("continuous")) adv.push({ exposureMode: "continuous" });
+    if (adv.length) cam.track.applyConstraints({ advanced: adv }).catch(() => {});
+    if (caps.torch) { $("camLightBtn").hidden = false; $("camLightBtn").classList.remove("on"); }
+    if (caps.zoom) { const z = $("camZoom"); z.min = caps.zoom.min; z.max = Math.min(caps.zoom.max, caps.zoom.min * 4); z.step = caps.zoom.step || 0.1; z.value = caps.zoom.min; $("camZoomWrap").hidden = false; }
+  }
+  function refocus(x, y) {
+    const ring = $("camFocus"); ring.style.left = x + "px"; ring.style.top = y + "px"; ring.classList.remove("go"); void ring.offsetWidth; ring.classList.add("go");
+    if (!cam.track) return;
+    cam.track.applyConstraints({ advanced: [{ focusMode: "single-shot" }] }).catch(() => {});
+    setTimeout(() => cam.track && cam.track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {}), 1600);
+  }
+  $("camView").addEventListener("click", e => { const r = $("camView").getBoundingClientRect(); refocus(e.clientX - r.left, e.clientY - r.top); });
+  $("camLightBtn").addEventListener("click", async () => {
+    const on = !$("camLightBtn").classList.contains("on");
+    try { await cam.track.applyConstraints({ advanced: [{ torch: on }] }); $("camLightBtn").classList.toggle("on", on); } catch { toast("This camera has no light control"); }
+  });
+  $("camZoom").addEventListener("input", e => cam.track && cam.track.applyConstraints({ advanced: [{ zoom: +e.target.value }] }).catch(() => {}));
+
   function stopCam() {
     cam.run = false; scanBusy = false;
-    if (cam.stream) cam.stream.getTracks().forEach(t => t.stop()); cam.stream = null;
+    if (cam.stream) cam.stream.getTracks().forEach(t => t.stop()); cam.stream = null; cam.track = null;
     $("camVideo").srcObject = null; $("camBox").hidden = true; $("camStart").disabled = false;
     $("liveCard").classList.remove("scanning");
   }
-  function grabFrame() {
-    const v = $("camVideo"), vw = v.videoWidth, vh = v.videoHeight;
-    const sx = vw * 0.04, sy = vh * 0.22, sw = vw * 0.92, sh = vh * 0.56;
-    const c = document.createElement("canvas"), k = Math.min(1, 1800 / sw);
-    c.width = Math.round(sw * k); c.height = Math.round(sh * k);
-    c.getContext("2d").drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
-    return classicPrep(c);
-  }
+
   async function camLoop() {
     try {
-      hud("Loading reader…");
+      hud("Loading reader…", "search");
       cam.worker = cam.worker || await Tesseract.createWorker("eng");
       while (cam.run) {
-        hud("Hold steady, reading…");
-        const { data } = await cam.worker.recognize(grabFrame());
+        const burst = await bestOfBurst(); if (!cam.run) break;
+        const soft = burst.sh < 90, dark = lumaMean(burst.c) < 95;
+        const q = burst.sh < 25 ? "Very blurry" : burst.sh < 90 ? "A bit soft" : "Sharp";
+        $("camQual").textContent = q + (dark ? " · dim" : ""); $("camQual").dataset.q = burst.sh < 25 ? "bad" : burst.sh < 90 ? "mid" : "good";
+        // alternate prep: original, and a rescue version for soft or dark frames
+        const rescue = (cam.n++ % 2 === 1) || soft || dark;
+        const src = rescue ? enhanceFrame(burst.c, soft) : burst.c;
+        hud(soft || dark ? "Reading a soft frame…" : "Reading…", cam.cand ? "found" : "search");
+        const { data } = await cam.worker.recognize(classicPrep(src));
         if (!cam.run) break;
-        const r = filterOCR(data);
+        const r = filterOCR(data), secs = (Date.now() - cam.t0) / 1000;
+        if (r.hits >= 2 && r.hits >= cam.candHits) { cam.cand = r.text; cam.candHits = r.hits; }
         if (!r.ok) {
-          cam.stable = 0; cam.last = ""; setBar($("scanBar"), 6);
-          $("scanStatus").textContent = "Looking for an ingredient list…";
-          $("camLive").textContent = ""; hud("Fit the ingredient list inside the frame");
-          await sleep(250); continue;
+          cam.stable = 0; cam.last = "";
+          $("scanStatus").textContent = r.hits ? "Partly readable, keep going" : "Looking for an ingredient list…";
+          setBar($("scanBar"), r.hits ? 25 : 6);
+          $("camLive").textContent = r.hits ? "…" + r.text.slice(0, 160) : "";
+          hud(burst.sh < 25 ? "Hold steady, tap the screen to focus" : dark ? "Too dark. Tap 🔦 or add light" : "Fit the ingredient list inside the frame", r.hits ? "found" : "search");
+        } else {
+          const same = cam.last && jaccard(wordSet(r.text), wordSet(cam.last)) >= 0.55;
+          cam.stable = same ? cam.stable + 1 : 0; cam.last = r.text;
+          if (!same || r.text.length >= cam.bestRead.length * 0.8) cam.bestRead = r.text;
+          $("camLive").textContent = r.text.length > 220 ? r.text.slice(0, 217) + "…" : r.text;
+          setBar($("scanBar"), Math.min(100, 35 + cam.stable * 40));
+          $("scanStatus").textContent = cam.stable ? "Steady, locking…" : "Ingredient list found";
+          hud(cam.stable ? "Steady… locking" : "Ingredient list found", cam.stable ? "steady" : "found");
+          if (cam.stable >= 1 && (r.hits >= 4 || cam.stable >= 2)) return lockScan(cam.bestRead || r.text);
         }
-        const same = cam.last && jaccard(wordSet(r.text), wordSet(cam.last)) >= 0.75;
-        cam.stable = same ? cam.stable + 1 : 0; cam.last = r.text;
-        if (r.text.length >= cam.bestRead.length * 0.8 || !same) cam.bestRead = r.text;
-        $("camLive").textContent = r.text.length > 220 ? r.text.slice(0, 217) + "…" : r.text;
-        setBar($("scanBar"), Math.min(100, 30 + cam.stable * 35));
-        $("scanStatus").textContent = cam.stable ? "Text is steady… " + Math.min(100, Math.round(cam.stable * 50)) + "%" : "Ingredient text found";
-        hud(cam.stable ? "Almost locked" : "Ingredient list detected");
-        if (cam.stable >= 2) return lockScan(cam.bestRead || r.text);
-        await sleep(150);
+        // never get stuck: offer, then use, the best partial read
+        const best = cam.bestRead || cam.cand;
+        if (best && secs > 6) { $("camCapture").classList.add("pulse"); $("camCapture").textContent = "🔒 Use best read"; }
+        if (best && secs > 14) return lockScan(best);
+        await sleep(100);
       }
     } catch (err) { console.error(err); toast("Scanner problem. Try again or use a photo."); stopCam(); }
   }
-  function lockScan(text) {
-    if (navigator.vibrate) navigator.vibrate(60);
-    setBar($("scanBar"), 100); stopCam();
+  async function lockScan(text) {
+    if (cam.locking) return; cam.locking = true; cam.run = false;
+    if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+    setBar($("scanBar"), 100); $("scanStatus").textContent = "Locked";
+    $("camView").dataset.state = "locked"; $("camLockBadge").hidden = false; hud("Locked ✔", "locked");
+    try { $("camVideo").pause(); } catch {}
+    await sleep(1100);
+    stopCam(); $("camLockBadge").hidden = true; cam.locking = false;
     const out = correctWords(text);
     liveReveal = true; $("ingText").value = out; $("ingText").dispatchEvent(new Event("input"));
     toast("Locked. Check the live scan, then Analyze");
@@ -210,7 +298,8 @@
   $("camStart").addEventListener("click", startCam);
   $("camStop").addEventListener("click", stopCam);
   $("camCapture").addEventListener("click", () => {
-    if (cam.bestRead) lockScan(cam.bestRead); else toast("Nothing readable yet. Move closer to the ingredient list.");
+    const b = cam.bestRead || cam.cand;
+    if (b) lockScan(b); else toast("Nothing readable yet. Move closer, tap the screen to focus, or turn on the light.");
   });
 
   /* photo fallback: same reader and the same filter, no editing screens */

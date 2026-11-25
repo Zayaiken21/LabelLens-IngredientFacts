@@ -283,3 +283,30 @@ button{font-family:inherit}
 .camhud{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);background:rgba(8,16,30,.78);padding:6px 12px;border-radius:999px;font-size:.8rem;white-space:nowrap;max-width:94%;overflow:hidden;text-overflow:ellipsis}
 .camlive{margin-top:10px;min-height:20px;font-size:.85rem;color:var(--mint);word-break:break-word}
 @media (prefers-reduced-motion:reduce){.guide .beam{animation:none;top:50%}}
+
+/* ---- scanner states, lock, focus ---- */
+.camview[data-state=search] .guide{box-shadow:0 0 0 999px rgba(4,10,22,.55),0 0 0 2px rgba(255,255,255,.35) inset}
+.camview[data-state=found] .guide i{border-color:var(--yellow);filter:drop-shadow(0 0 8px var(--yellow))}
+.camview[data-state=found] .camhud{background:rgba(120,90,10,.85)}
+.camview[data-state=steady] .guide i{border-color:var(--green);animation:pulse .6s ease-in-out infinite alternate}
+.camview[data-state=steady] .camhud{background:rgba(10,90,60,.9)}
+.camview[data-state=locked] .guide{box-shadow:0 0 0 999px rgba(4,10,22,.35),0 0 0 4px var(--green) inset,0 0 40px var(--green)}
+.camview[data-state=locked] .guide i{border-color:#fff;width:34px;height:34px}
+.camview[data-state=locked] .guide .beam{display:none}
+.camview[data-state=locked] .camhud{background:var(--green);color:#04130d;font-weight:800}
+@keyframes pulse{to{transform:scale(1.18)}}
+.lockbadge{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:6px;background:rgba(5,40,28,.45);animation:flash .5s ease-out;pointer-events:none}
+.lockbadge b{font-size:3.4rem;line-height:1;filter:drop-shadow(0 0 14px var(--green));animation:pop .45s cubic-bezier(.2,1.6,.4,1)}
+.lockbadge span{font-weight:900;letter-spacing:.25em;font-size:1.3rem;color:#fff;background:var(--green);color:#04130d;padding:4px 16px;border-radius:999px;animation:pop .45s .08s cubic-bezier(.2,1.6,.4,1) both}
+@keyframes pop{from{transform:scale(.2);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes flash{from{background:rgba(255,255,255,.8)}to{background:rgba(5,40,28,.45)}}
+.camqual{position:absolute;top:10px;left:10px;font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:999px;background:rgba(8,16,30,.8)}
+.camqual[data-q=good]{color:var(--green)}.camqual[data-q=mid]{color:var(--yellow)}.camqual[data-q=bad]{color:var(--red)}
+.camfocus{position:absolute;width:64px;height:64px;margin:-32px 0 0 -32px;border:2px solid #fff;border-radius:50%;opacity:0;pointer-events:none}
+.camfocus.go{animation:focusring .9s ease-out}
+@keyframes focusring{0%{opacity:1;transform:scale(1.6)}60%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1)}}
+#camLightBtn.on{background:var(--yellow);color:#241a00}
+.btn.pulse{animation:btnpulse 1s ease-in-out infinite}
+@keyframes btnpulse{50%{box-shadow:0 0 0 6px rgba(34,211,166,.35)}}
+.camview{cursor:crosshair}
+.camera,.livecard{scroll-margin-top:72px}
