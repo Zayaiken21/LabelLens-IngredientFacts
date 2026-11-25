@@ -27,9 +27,9 @@
         const res = await fetch(url, { signal: ctl.signal, headers: { Accept: "application/json" } });
         if (res.status === 404) { cput(key, null); return null; }
         if (res.status === 429 || res.status === 503 || res.status >= 500) { mem.cool = Date.now() + 90000; throw Object.assign(new Error("busy"), { busy: true }); }
-        if (!res.ok) throw new Error("http " + res.status);
+        if (!res.ok) throw Object.assign(new Error("http"), { detail: "HTTP " + res.status });
         const json = await res.json(); cput(key, json); return json;
-      } catch (e) { if (e.name === "AbortError") { mem.cool = Date.now() + 20000; throw Object.assign(new Error("timeout"), { busy: true }); } throw e; }
+      } catch (e) { if (e instanceof TypeError) e.detail = "the browser could not connect (offline, or the service blocked the request)"; if (e.name === "AbortError") { mem.cool = Date.now() + 20000; throw Object.assign(new Error("timeout"), { busy: true }); } throw e; }
       finally { clearTimeout(to); }
     });
     mem.chain = run.catch(() => {});

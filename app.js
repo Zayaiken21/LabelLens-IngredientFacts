@@ -155,7 +155,7 @@
   const online_err = e => e && e.search ? "Name search is unavailable right now (the free service limits it). Scan or type the barcode instead, that is more reliable. Your scan still works." : e && e.cool ? `The online database asked us to slow down. Try again in ${e.cool}s. Your scan still works.` :
     e && e.busy ? "The online database is busy right now. Your scan still works, try again in a minute." :
     e && e.message === "bad code" ? "That does not look like a barcode (8 to 14 digits)." :
-    e && e.message === "short" ? "Type at least 3 letters." : "Could not reach the online database. Check your connection. Your scan still works.";
+    e && e.message === "short" ? "Type at least 3 letters." : "Could not reach the online database" + (e && e.detail ? " (" + e.detail + ")" : "") + ". Check your connection, then try again. Your scan still works.";
   function cmpNow() { return online && $("ingText").value.trim() && online.ing ? LLOnline.compare($("ingText").value, online.ing) : null; }
   function showOnline(p, fromList) {
     online = p; $("findList").innerHTML = fromList ? $("findList").innerHTML : ""; const box = $("onlineBox"); box.hidden = false;

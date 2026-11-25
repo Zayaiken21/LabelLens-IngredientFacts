@@ -272,27 +272,27 @@ button{font-family:inherit}
 .camera{margin-top:12px}
 .camview{position:relative;width:100%;max-height:72vh;background:#000;border-radius:16px;overflow:hidden;border:1px solid rgba(34,211,166,.4);box-shadow:0 0 28px rgba(34,211,166,.18)}
 .camview video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
-.guide{position:absolute;left:4%;top:22%;width:92%;height:56%;border-radius:10px;box-shadow:0 0 0 999px rgba(4,10,22,.55)}
-.guide i{position:absolute;width:26px;height:26px;border:3px solid var(--mint);filter:drop-shadow(0 0 6px var(--mint))}
-.guide i:nth-child(1){left:-2px;top:-2px;border-right:0;border-bottom:0;border-top-left-radius:10px}
-.guide i:nth-child(2){right:-2px;top:-2px;border-left:0;border-bottom:0;border-top-right-radius:10px}
-.guide i:nth-child(3){left:-2px;bottom:-2px;border-right:0;border-top:0;border-bottom-left-radius:10px}
-.guide i:nth-child(4){right:-2px;bottom:-2px;border-left:0;border-top:0;border-bottom-right-radius:10px}
-.guide .beam{position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,transparent,var(--mint),transparent);box-shadow:0 0 16px var(--mint);animation:guidebeam 1.8s ease-in-out infinite}
+.camguide{position:absolute;left:4%;top:22%;width:92%;height:56%;border-radius:10px;box-shadow:0 0 0 999px rgba(4,10,22,.55)}
+.camguide i{position:absolute;width:26px;height:26px;border:3px solid var(--mint);filter:drop-shadow(0 0 6px var(--mint))}
+.camguide i:nth-child(1){left:-2px;top:-2px;border-right:0;border-bottom:0;border-top-left-radius:10px}
+.camguide i:nth-child(2){right:-2px;top:-2px;border-left:0;border-bottom:0;border-top-right-radius:10px}
+.camguide i:nth-child(3){left:-2px;bottom:-2px;border-right:0;border-top:0;border-bottom-left-radius:10px}
+.camguide i:nth-child(4){right:-2px;bottom:-2px;border-left:0;border-top:0;border-bottom-right-radius:10px}
+.camguide .beam{position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,transparent,var(--mint),transparent);box-shadow:0 0 16px var(--mint);animation:guidebeam 1.8s ease-in-out infinite}
 @keyframes guidebeam{0%,100%{top:2%}50%{top:96%}}
 .camhud{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);background:rgba(8,16,30,.78);padding:6px 12px;border-radius:999px;font-size:.8rem;white-space:nowrap;max-width:94%;overflow:hidden;text-overflow:ellipsis}
 .camlive{margin-top:10px;min-height:20px;font-size:.85rem;color:var(--mint);word-break:break-word}
-@media (prefers-reduced-motion:reduce){.guide .beam{animation:none;top:50%}}
+@media (prefers-reduced-motion:reduce){.camguide .beam{animation:none;top:50%}}
 
 /* ---- scanner states, lock, focus ---- */
-.camview[data-state=search] .guide{box-shadow:0 0 0 999px rgba(4,10,22,.55),0 0 0 2px rgba(255,255,255,.35) inset}
-.camview[data-state=found] .guide i{border-color:var(--yellow);filter:drop-shadow(0 0 8px var(--yellow))}
+.camview[data-state=search] .camguide{box-shadow:0 0 0 999px rgba(4,10,22,.55),0 0 0 2px rgba(255,255,255,.35) inset}
+.camview[data-state=found] .camguide i{border-color:var(--yellow);filter:drop-shadow(0 0 8px var(--yellow))}
 .camview[data-state=found] .camhud{background:rgba(120,90,10,.85)}
-.camview[data-state=steady] .guide i{border-color:var(--green);animation:pulse .6s ease-in-out infinite alternate}
+.camview[data-state=steady] .camguide i{border-color:var(--green);animation:pulse .6s ease-in-out infinite alternate}
 .camview[data-state=steady] .camhud{background:rgba(10,90,60,.9)}
-.camview[data-state=locked] .guide{box-shadow:0 0 0 999px rgba(4,10,22,.35),0 0 0 4px var(--green) inset,0 0 40px var(--green)}
-.camview[data-state=locked] .guide i{border-color:#fff;width:34px;height:34px}
-.camview[data-state=locked] .guide .beam{display:none}
+.camview[data-state=locked] .camguide{box-shadow:0 0 0 999px rgba(4,10,22,.35),0 0 0 4px var(--green) inset,0 0 40px var(--green)}
+.camview[data-state=locked] .camguide i{border-color:#fff;width:34px;height:34px}
+.camview[data-state=locked] .camguide .beam{display:none}
 .camview[data-state=locked] .camhud{background:var(--green);color:#04130d;font-weight:800}
 @keyframes pulse{to{transform:scale(1.18)}}
 .lockbadge{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:6px;background:rgba(5,40,28,.45);animation:flash .5s ease-out;pointer-events:none}
