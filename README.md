@@ -40,3 +40,5 @@ Note: a browser app cannot hide a key. It is visible in the deployed `config.js`
 
 ## Shared ingredients
 "Suggest for everyone" opens a prefilled GitHub issue titled "New ingredient: …". A workflow re-checks the word itself against Wikipedia and PubMed (it ignores any sources the submitter typed), and if it passes, appends it to `community.json` as neutral, redeploys, and closes the issue. No labels or manual approval needed.
+
+For submissions without a GitHub account, set up the small relay in `worker/README.md`.

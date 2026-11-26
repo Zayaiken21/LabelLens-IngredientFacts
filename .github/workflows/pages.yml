@@ -20,11 +20,12 @@ jobs:
       - name: Write site key from secret
         env:
           FDC_API_KEY: ${{ secrets.FDC_API_KEY }}
+          SUBMIT_URL: ${{ secrets.SUBMIT_URL }}
         run: |
           python3 - <<'PY'
           import json, os
           key = os.environ.get("FDC_API_KEY", "").strip()
-          open("config.js", "w").write("window.LL_CONFIG = " + json.dumps({"fdcKey": key}) + ";\n")
+          open("config.js", "w").write("window.LL_CONFIG = " + json.dumps({"fdcKey": key, "submitUrl": os.environ.get("SUBMIT_URL", "").strip()}) + ";\n")
           PY
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
