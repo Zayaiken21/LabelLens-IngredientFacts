@@ -31,7 +31,7 @@
         if (res.status === 429 || res.status === 503 || res.status >= 500) { mem[ck] = Date.now() + (kind === "fdc" ? 600000 : 90000); throw Object.assign(new Error("busy"), { busy: true, fdc: kind === "fdc" }); }
         if (!res.ok) throw Object.assign(new Error("http"), { detail: "HTTP " + res.status });
         const raw = await res.json(), json = tx ? tx(raw) : raw; cput(key, json); return json;
-      } catch (e) { if (e instanceof TypeError) e.detail = "the browser could not connect (offline, or the service blocked the request)"; if (e.name === "AbortError") { mem[ck] = Date.now() + 20000; throw Object.assign(new Error("timeout"), { busy: true }); } throw e; }
+      } catch (e) { if (e instanceof SyntaxError) e.detail = "the service sent a reply the app could not read"; if (e instanceof TypeError) e.detail = "the browser could not connect (offline, or the service blocked the request)"; if (e.name === "AbortError") { mem[ck] = Date.now() + 20000; throw Object.assign(new Error("timeout"), { busy: true }); } throw e; }
       finally { clearTimeout(to); }
     });
     mem.chains[kind] = run.catch(() => {});
@@ -128,7 +128,7 @@
     if (!out.length && Object.keys(errs).length) {
       if (spent) refund();                                          // a search that could not run does not use up the allowance
       const first = Object.values(errs).find(e => e.cool || e.busy || e.keyBad) || Object.values(errs)[0];
-      const why = Object.entries(errs).map(([k, e]) => k + ": " + (e.detail || (e.cool ? "cooling down " + e.cool + "s" : e.busy ? "busy or rate limited" : e.message || "failed"))).join("; ");
+      const why = Object.entries(errs).map(([k, e]) => k + ": " + (e.detail || (e.cool ? "cooling down " + e.cool + "s" : e.busy ? "busy or rate limited" : (e.name || "Error") + " " + (e.message || "failed")))).join("; ");
       throw Object.assign(first, { why });
     }
     return rank(out, q).slice(0, 40);
