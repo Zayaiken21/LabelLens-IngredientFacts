@@ -422,7 +422,6 @@
   async function startCamInner(mode) {
     if (!window.isSecureContext) return toast("The camera needs a secure (https) page. Open the app from its https address.");
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return toast("Camera is not available in this browser. Try Safari on iPhone or Chrome on Android.");
-    try { const st = navigator.permissions && (await navigator.permissions.query({ name: "camera" })); if (st && st.state === "denied") return toast("Camera is blocked for this site. Tap the lock or AA icon in the address bar, set Camera to Allow, then reload."); } catch {}
     $("camBox").hidden = false; hud("Starting camera…", "search"); $("camLive").textContent = "";
     $("camStart").disabled = true;
     if (cam.stream) { cam.stream.getTracks().forEach(t => t.stop()); cam.stream = null; }
