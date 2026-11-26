@@ -89,12 +89,13 @@
   const singular = w => w.replace(/ies$/, "y").replace(/(?<=[^s])s$/, "");
   async function byNameFDC(q) {
     const key = fdcKey(), ws = words(q), multi = ws.length >= 2, sg = ws.map(singular).join(" ");
-    const base = "Branded,Foundation,SR%20Legacy", wide = base + ",Survey%20(FNDDS)";
+    const base = "Branded,Foundation,SR%20Legacy", wide = base;
     const tries = [[q, multi, base, "f:" + q], [q, false, wide, "f2:" + q]];                 // strict first, then loosened so odd names still find something
     if (sg !== ws.join(" ")) tries.push([sg, false, wide, "f3:" + sg]);                      // plural or singular spelling
     if (multi) tries.push([ws.slice().sort((x, y) => y.length - x.length)[0], false, wide, "f4:" + ws.slice().sort((x, y) => y.length - x.length)[0]]);   // longest word alone
-    let last = null;
+    let last = null, lastErr = null;
     for (const [qq, all, types, ck] of tries) {
+      try {
       const url = `${FDC}/foods/search?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(qq)}&dataType=${types}&pageSize=50&requireAllWords=${all}`;
       const list = await polite("fdc", url, ck, j => (j && Array.isArray(j.foods) ? j.foods : []).map(f => { try { return fromFDC(f); } catch { return null; } }).filter(p => p && p.name));   // one odd record never breaks the whole search
       if (list && list.length) {
@@ -104,7 +105,9 @@
         return list;
       }
       last = list;
+      } catch (e) { lastErr = e; }
     }
+    if (!last && lastErr) throw lastErr;
     return last || [];
   }
   /* relevance tiers: 0 exact food name, 1 starts with it, 2 first word is it, 3 contains every word, 4 other */
@@ -149,8 +152,10 @@
     }
     return rank(out, q).slice(0, 120);
   }
+  const txt = v => (Array.isArray(v) ? v.join(", ") : v == null ? "" : String(v));
   function normalize(p) {
-    return { code: p.code, name: p.product_name || "", brand: (p.brands || "").split(",")[0], qty: p.quantity || "", ing: p.ingredients_text_en || p.ingredients_text || "",
+    p = Object.assign({}, p, { code: txt(p.code), product_name: txt(p.product_name), brands: txt(p.brands), quantity: txt(p.quantity), serving_size: txt(p.serving_size), ingredients_text: txt(p.ingredients_text), ingredients_text_en: txt(p.ingredients_text_en) });
+    return { code: p.code, name: p.product_name || "", brand: p.brands.split(",")[0].trim(), qty: p.quantity || "", ing: p.ingredients_text_en || p.ingredients_text || "",
       serving: p.serving_size || "", servingG: +p.serving_quantity || parseWeightG(p.serving_size), packageG: parseWeightG(p.quantity), nutr: p.nutriments || {}, img: p.image_front_small_url || "", nova: p.nova_group, nutri: p.nutriscore_grade, src: "Open Food Facts" };
   }
 
