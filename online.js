@@ -87,10 +87,19 @@
   const words = s => String(s).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
   const singular = w => w.replace(/ies$/, "y").replace(/(?<=[^s])s$/, "");
   async function byNameFDC(q) {
-    const key = fdcKey(), multi = words(q).length >= 2;
-    const url = `${FDC}/foods/search?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(q)}&dataType=Branded,Foundation,SR%20Legacy&pageSize=50&requireAllWords=${multi}`;
-    const list = await polite("fdc", url, "f:" + q, j => (j && j.foods ? j.foods : []).map(fromFDC).filter(p => p.name));   // cache the slim list, not the raw payload
-    return list || [];
+    const key = fdcKey(), ws = words(q), multi = ws.length >= 2, sg = ws.map(singular).join(" ");
+    const base = "Branded,Foundation,SR%20Legacy", wide = base + ",Survey%20(FNDDS)";
+    const tries = [[q, multi, base, "f:" + q], [q, false, wide, "f2:" + q]];                 // strict first, then loosened so odd names still find something
+    if (sg !== ws.join(" ")) tries.push([sg, false, wide, "f3:" + sg]);                      // plural or singular spelling
+    if (multi) tries.push([ws.slice().sort((x, y) => y.length - x.length)[0], false, wide, "f4:" + ws.slice().sort((x, y) => y.length - x.length)[0]]);   // longest word alone
+    let last = null;
+    for (const [qq, all, types, ck] of tries) {
+      const url = `${FDC}/foods/search?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(qq)}&dataType=${types}&pageSize=50&requireAllWords=${all}`;
+      const list = await polite("fdc", url, ck, j => (j && Array.isArray(j.foods) ? j.foods : []).map(f => { try { return fromFDC(f); } catch { return null; } }).filter(p => p && p.name));   // one odd record never breaks the whole search
+      if (list && list.length) return list;
+      last = list;
+    }
+    return last || [];
   }
   /* relevance tiers: 0 exact food name, 1 starts with it, 2 first word is it, 3 contains every word, 4 other */
   function tier(p, qw, qn) {
@@ -122,10 +131,11 @@
     let out = [], spent = false;
     if (!cget("f:" + q)) { spend(); spent = true; }
     const note = (who, e) => { errs[who] = e; };
-    try { out = await byNameFDC(q); } catch (e) { note("USDA", e); }
+    let fdcOk = false;
+    try { out = await byNameFDC(q); fdcOk = true; } catch (e) { note("USDA", e); }
     if (out.filter(p => tier(p, qw, qn) < 3).length < 3) { try { out = out.concat(await byName(q)); } catch (e) { note("Open Food Facts", e); } }
     const seen = new Set(); out = out.filter(p => { const k = (p.code || "") + "|" + p.name.toLowerCase() + "|" + p.brand.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
-    if (!out.length && Object.keys(errs).length) {
+    if (!out.length && !fdcOk && Object.keys(errs).length) {
       if (spent) refund();                                          // a search that could not run does not use up the allowance
       const first = Object.values(errs).find(e => e.cool || e.busy || e.keyBad) || Object.values(errs)[0];
       const why = Object.entries(errs).map(([k, e]) => k + ": " + (e.detail || (e.cool ? "cooling down " + e.cool + "s" : e.busy ? "busy or rate limited" : (e.name || "Error") + " " + (e.message || "failed")))).join("; ");
