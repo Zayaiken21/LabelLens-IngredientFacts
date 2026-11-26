@@ -417,7 +417,9 @@
 
   async function startCam(mode) {
     if (mode !== "barcode" && !window.Tesseract) return toast("Reader is still loading. Try again in a moment.");
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return toast("Camera is not available here. Use a photo instead.");
+    if (!window.isSecureContext) return toast("The camera needs a secure (https) page. Open the app from its https address.");
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return toast("Camera is not available in this browser. Try Safari on iPhone or Chrome on Android.");
+    try { const st = navigator.permissions && (await navigator.permissions.query({ name: "camera" })); if (st && st.state === "denied") return toast("Camera is blocked for this site. Tap the lock or AA icon in the address bar, set Camera to Allow, then reload."); } catch {}
     $("camBox").hidden = false; hud("Starting camera…", "search"); $("camLive").textContent = "";
     $("camStart").disabled = true;
     if (cam.stream) { cam.stream.getTracks().forEach(t => t.stop()); cam.stream = null; }
@@ -425,11 +427,15 @@
       cam.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
     } catch (e) {
       $("camBox").hidden = true; $("camStart").disabled = false;
-      return toast("Camera permission was blocked. Allow it in your browser, or use a photo.");
+      const n = e && e.name;
+      return toast(n === "NotAllowedError" ? "Camera permission was not allowed. Tap Allow when the browser asks. To keep it on, set Camera to Allow for this site in your browser settings." :
+        n === "NotFoundError" || n === "OverconstrainedError" ? "No camera was found on this device." :
+        n === "NotReadableError" ? "The camera is being used by another app. Close it and try again." : "Could not start the camera. Reload the page and try again.");
     }
-    const v = $("camVideo"); v.srcObject = cam.stream;
-    await new Promise(r => (v.onloadedmetadata = r)); try { await v.play(); } catch {}
-    $("camView").style.aspectRatio = v.videoWidth + " / " + v.videoHeight;
+    const v = $("camVideo"); v.srcObject = cam.stream; v.muted = true; v.setAttribute("playsinline", "");
+    await Promise.race([new Promise(r => (v.onloadedmetadata = r)), sleep(5000)]);     // never hang here if the event is late
+    try { await v.play(); } catch {}
+    $("camView").style.aspectRatio = (v.videoWidth || 4) + " / " + (v.videoHeight || 3);
     setupTrack();
     $("camView").dataset.state = ""; $("camLockBadge").hidden = true; $("camLive").textContent = ""; setBar($("scanBar"), 0); $("scanStatus").textContent = "Starting…";
     Object.assign(cam, { run: true, last: "", stable: 0, bestRead: null, cand: null, candHits: 0, t0: Date.now(), n: 0, locking: false, nut: null, votes: new Map(), first: new Map(), reads: 0, code: "", barRun: false });
