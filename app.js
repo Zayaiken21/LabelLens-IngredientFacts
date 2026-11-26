@@ -190,11 +190,17 @@
     if (findBusy) return; findBusy = true; btn.disabled = true;
     try { await fn(); } catch (e) { findMsg(online_err(e)); } finally { findBusy = false; btn.disabled = false; }
   }
+  const nutHas = () => Object.keys(nutVals).length > 0;
   async function lookupCode(code, quiet) {
     findMsg("Looking up " + code + "… (requests are spaced out to stay within the service limits)");
     const p = await LLOnline.byBarcode(code);
     if (!p) { findMsg("No product with barcode " + code + " is in the online database yet. You can still use the scan, or search by name."); return null; }
-    findMsg(""); showOnline(p); if (!quiet) toast("Found online: " + p.name); return p;
+    findMsg(""); showOnline(p); if (!quiet) toast("Found online: " + p.name);
+    if (quiet) {                                   // came from the camera: fill in everything the product has, without overwriting what was already scanned
+      if (p.ing && !$("ingText").value.trim()) { setIng(p.ing); toast("Ingredients filled from barcode"); }
+      const nut = LLOnline.toNutrition(p, ""); if (nut._n && !nutHas()) { setNut(nut); toast("Nutrition filled from barcode"); }
+    }
+    return p;
   }
   $("findCodeBtn").addEventListener("click", () => guard($("findCodeBtn"), () => lookupCode($("findCode").value)));
   $("findCode").addEventListener("keydown", e => { if (e.key === "Enter") $("findCodeBtn").click(); });
@@ -541,6 +547,7 @@
   function scoreInfo(cur) {
     const r = cur.redList.length, y = cur.yellowList.length, g = cur.goodList.length, n = cur.tokens.length, s = cur.score;
     const plural = (k, w) => k + " " + w + (k === 1 ? "" : "s");
+    if (cur.zeroed) return { c: "var(--bad)", l: "Scored 0: bioengineered / lab-grown", sub: "The label mentions a bioengineered or lab-grown ingredient, and your strict rule gives those a 0. Regulators have not found approved ones unsafe, so this is your personal rule, not a poison finding. You can turn it off below." };
     if (!r && !y) return { c: "var(--good)", l: g ? "Clean label" : "Nothing flagged",
       sub: `We checked ${plural(n, "ingredient")} and none are on our watch list${g ? `. ${plural(g, "good ingredient")} stood out` : ""}. Ingredients we do not know yet stay gray.` };
     if (s >= 70) return { c: "var(--good)", l: "Mostly fine", sub: `${plural(r + y, "ingredient")} worth a look out of ${n}, none serious. Details are below.` };
@@ -562,6 +569,8 @@
     });
   }
 
+  try { $("strictBio").checked = localStorage.getItem("ll_strictbio") !== "0"; } catch {}
+  $("strictBio").addEventListener("change", () => { try { localStorage.setItem("ll_strictbio", $("strictBio").checked ? "1" : "0"); } catch {} if (current) { current = { text: current.text, ...E.analyze(current.text) }; renderResults(); } });
   function renderResults() {
     $("emptyResults").hidden = true; $("resultsBody").hidden = false;
     const s = scoreInfo(current);

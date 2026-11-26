@@ -210,7 +210,7 @@ window.IngredientEngine = {
     return (raw || "")
       .replace(/\r?\n+/g, " ")
       .replace(/^[\s\S]*?ingredients?\s*[:\-]/i, "")
-      .replace(/\bcontains\b[^.]*\.?\s*$/i, "")
+      .replace(/\bcontains\b[^.]*\.?\s*$/i, m => (/bioengineer|genetic|gmo|lab[- ]grown|cell[- ]cultur/i.test(m) ? ", " + m.replace(/\.\s*$/, "") : ""))   // allergen statements are dropped, disclosure statements are kept
       .replace(/\*/g, "")
       .replace(/\s+/g, " ")
       .trim();
@@ -277,8 +277,11 @@ window.IngredientEngine = {
     watchList.forEach(w => score -= w.entry.level * 6);
     goodList.forEach(() => score += 4);
     score = Math.max(0, Math.min(100, Math.round(score)));
+    let strict = true; try { strict = localStorage.getItem("ll_strictbio") !== "0"; } catch {}
+    const zeroed = strict && watchList.some(w => w.entry.name.startsWith("Bioengineered"));
+    if (zeroed) score = 0;
     const neutralList = [...neutral.values()];
     const matched = new Set([...watchList, ...goodList, ...neutralList].flatMap(x => x.found));
-    return { tokens, watchList, redList, yellowList, goodList, neutralList, score, unmatched: tokens.filter(t => !matched.has(t)) };
+    return { tokens, watchList, redList, yellowList, goodList, neutralList, score, zeroed, unmatched: tokens.filter(t => !matched.has(t)) };
   }
 };

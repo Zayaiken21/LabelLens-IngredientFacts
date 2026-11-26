@@ -58,4 +58,9 @@
     "Jam, sauces, dressings, plant milks, ice cream",
     "Plant or fermentation-based thickeners. Generally well tolerated in food amounts, though large amounts can cause gas.",
     "Permitted in the EU and US.");
+  add("Bioengineered / lab-grown ingredient", "watch", 3, ["bioengineered", "bio-engineered", "genetically engineered", "genetically modified", "genetically-modified", "gmo", "cell-cultured", "cell cultured", "cell-cultivated", "cultivated meat", "cell-based meat", "lab-grown", "lab grown", "lab-created"],
+    "Disclosure statements on US labels (\"bioengineered food ingredient\"), some corn, soy, sugar, canola, new meat alternatives",
+    "Flagged because the label says it was genetically engineered or grown from cells in a lab. Major regulators (FDA, EFSA, WHO) have not found approved bioengineered foods less safe than conventional ones, and lab-grown meat is new, so long-term data is limited. LabelLens flags it for people who want to avoid it; with the strict rule on, it scores the product 0. That is a personal-choice rule, not a finding that the food is poison.",
+    "In the US, labels must disclose bioengineered ingredients. The EU requires GMO labeling above 0.9%.",
+    ["non-gmo", "non gmo", "no gmo", "gmo free", "gmo-free", "not bioengineered", "non-bioengineered", "not genetically", "no genetically", "free of genetically"]);
 })();
