@@ -204,9 +204,20 @@
   }
   $("findCodeBtn").addEventListener("click", () => guard($("findCodeBtn"), () => lookupCode($("findCode").value)));
   $("findCode").addEventListener("keydown", e => { if (e.key === "Enter") $("findCodeBtn").click(); });
-  function renderPicks(list, scan) {
+  let pickBrand = "", pickAll = [], pickScan = "";
+  function renderPicks(list, scan, keep) {
+    if (!keep) { pickBrand = ""; pickAll = list; pickScan = scan; }
     const box = $("findList"); box.innerHTML = "";
-    LLOnline.group(list).slice(0, 25).forEach(g => {
+    const cnt = new Map(); pickAll.forEach(p => { const b = (p.brand || "").trim(); if (b) cnt.set(b, (cnt.get(b) || 0) + 1); });
+    if (cnt.size > 1) {                                   // every brand found for this word, tap one to narrow the list
+      const bar = document.createElement("div"); bar.className = "brandbar";
+      const mkb = (label, val) => { const b = document.createElement("button"); b.className = "chip" + (pickBrand === val ? " on" : ""); b.textContent = label; b.addEventListener("click", () => { pickBrand = val; renderPicks(pickAll, pickScan, true); }); bar.appendChild(b); };
+      mkb(`All brands (${cnt.size})`, "");
+      [...cnt.entries()].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0])).slice(0, 30).forEach(([b, n]) => mkb(`${b} · ${n}`, b));
+      box.appendChild(bar);
+    }
+    const shown = pickBrand ? pickAll.filter(p => (p.brand || "").trim() === pickBrand) : pickAll;
+    LLOnline.group(shown).slice(0, 40).forEach(g => {
       const wrap = document.createElement("div"); wrap.className = "resgroup";
       const mk = (p, label, cls) => {
         const b = document.createElement("button"); b._p = p; b.className = "pick " + cls;
@@ -234,7 +245,7 @@
     const scan = $("ingText").value.trim();
     list.forEach(p => { const c = scan && p.ing ? LLOnline.compare(scan, p.ing) : null; p._score = c ? c.score : -1; });
     if (scan) list.sort((a, b) => (a._tier - b._tier) || (b._score - a._score));
-    findMsg(list.length ? `${list.length} results. Exact names come first, with the sizes and packages they come in. Tap any one, then tap another to compare.` : "Nothing matched. Try one or two key words, or scan the barcode.");
+    findMsg(list.length ? `${list.length} results. Tap a brand to narrow the list. Exact names come first, with the sizes and packages they come in. Tap any one, then tap another to compare.` : "Nothing matched. Try one or two key words, or scan the barcode.");
     if (stale()) return; renderPicks(list, scan); quotaTxt();
     } catch (e) { if (!stale()) { findMsg(online_err(e)); quotaTxt(); } }
   });

@@ -68,6 +68,7 @@
   }
   const NUT_MAP = [["208", "energy-kcal", "KCAL"], ["204", "fat"], ["606", "saturated-fat"], ["605", "trans-fat"], ["601", "cholesterol"], ["307", "sodium"], ["205", "carbohydrates"], ["291", "fiber"],
     ["269", "sugars"], ["539", "added-sugars"], ["203", "proteins"], ["306", "potassium"], ["301", "calcium"], ["303", "iron"], ["328", "vitamin-d"], ["262", "caffeine"]];
+  const UNIT = { G: 1, MG: 1e-3, UG: 1e-6, "µG": 1e-6, KCAL: 1 };
   function fromFDC(f) {
     const n = {};
     (f.foodNutrients || []).forEach(x => {
@@ -96,7 +97,12 @@
     for (const [qq, all, types, ck] of tries) {
       const url = `${FDC}/foods/search?api_key=${encodeURIComponent(key)}&query=${encodeURIComponent(qq)}&dataType=${types}&pageSize=50&requireAllWords=${all}`;
       const list = await polite("fdc", url, ck, j => (j && Array.isArray(j.foods) ? j.foods : []).map(f => { try { return fromFDC(f); } catch { return null; } }).filter(p => p && p.name));   // one odd record never breaks the whole search
-      if (list && list.length) return list;
+      if (list && list.length) {
+        if (list.length >= 45 && ws.length <= 2) {                                          // broad term such as "chocolate": fetch a second page so more brands show up
+          try { const more = await polite("fdc", url + "&pageNumber=2", ck + ":p2", j => (j && Array.isArray(j.foods) ? j.foods : []).map(f => { try { return fromFDC(f); } catch { return null; } }).filter(p => p && p.name)); if (more) return list.concat(more); } catch {}
+        }
+        return list;
+      }
       last = list;
     }
     return last || [];
@@ -141,7 +147,7 @@
       const why = Object.entries(errs).map(([k, e]) => k + ": " + (e.detail || (e.cool ? "cooling down " + e.cool + "s" : e.busy ? "busy or rate limited" : (e.name || "Error") + " " + (e.message || "failed")))).join("; ");
       throw Object.assign(first, { why });
     }
-    return rank(out, q).slice(0, 40);
+    return rank(out, q).slice(0, 120);
   }
   function normalize(p) {
     return { code: p.code, name: p.product_name || "", brand: (p.brands || "").split(",")[0], qty: p.quantity || "", ing: p.ingredients_text_en || p.ingredients_text || "",

@@ -350,3 +350,4 @@ button{font-family:inherit}
 #researchCard[hidden],#glossEmpty[hidden],.card[hidden]{display:none}
 #researchCard select{width:100%;margin:6px 0;padding:8px;border-radius:10px}
 #camLightBtn.on{background:#ffd54a;color:#241a00;font-weight:800}
+.brandbar{display:flex;gap:6px;overflow-x:auto;padding:4px 0 8px;scrollbar-width:thin}.brandbar .chip{flex:none;white-space:nowrap;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:#13233d;color:inherit;cursor:pointer}.brandbar .chip.on{background:var(--mint);color:#06101f;font-weight:800}
