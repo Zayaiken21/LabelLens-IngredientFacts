@@ -1037,7 +1037,7 @@
         <div class="rescat"><label class="small">How should it be marked?
           <select id="resColor"><option value="neutral">⚪ Neutral (needs review)</option><option value="green">🟢 Good</option><option value="yellow">🟡 Caution</option><option value="red">🔴 Avoid</option></select></label></div>
         <div class="row"><button class="btn primary" id="resAdd">＋ Add to my app</button><a class="btn" id="resShare" target="_blank" rel="noopener noreferrer">🌍 Suggest for everyone</a><button class="btn" id="resClose">Close</button></div>
-        <p class="muted small">“Add to my app” works right away on this device. “Suggest for everyone” opens a prefilled GitHub request; once a maintainer approves it, it joins the shared glossary for all users.</p>`;
+        <p class="muted small">“Add to my app” works right away on this device. “Suggest for everyone” opens a prefilled GitHub request (a free GitHub account is needed to submit it). It is fact-checked automatically against Wikipedia and PubMed, and if it passes it joins the shared glossary for everyone, marked neutral until reviewed.</p>`;
       const entry = () => LLResearch.draft(r, $("resColor").value);
       const upd = () => { $("resShare").href = LLResearch.issueUrl(entry()); };
       $("resColor").addEventListener("change", upd); upd();

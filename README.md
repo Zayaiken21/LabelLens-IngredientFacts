@@ -33,6 +33,10 @@ Name search checks USDA FoodData Central first (via the site key) and Open Food 
 ## Setup for the site owner (one time)
 1. Repo **Settings → Secrets and variables → Actions → New repository secret**: name `FDC_API_KEY`, value your key.
 2. **Settings → Pages → Source: GitHub Actions** (the workflow in `.github/workflows/pages.yml` writes the key into `config.js` at deploy time).
-3. Create the issue labels `new-ingredient` and `approved-ingredient`. Applying `approved-ingredient` to a suggestion issue adds it to `community.json` for everyone.
+3. 
 
 Note: a browser app cannot hide a key. It is visible in the deployed `config.js`, and every visitor shares that key's hourly quota. Use a key you can rotate; a small proxy (for example a Cloudflare Worker) would keep it fully private.
+
+
+## Shared ingredients
+"Suggest for everyone" opens a prefilled GitHub issue titled "New ingredient: …". A workflow re-checks the word itself against Wikipedia and PubMed (it ignores any sources the submitter typed), and if it passes, appends it to `community.json` as neutral, redeploys, and closes the issue. No labels or manual approval needed.

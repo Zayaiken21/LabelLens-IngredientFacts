@@ -1,29 +1,36 @@
-name: Add approved ingredient
+name: Add suggested ingredient
 on:
   issues:
-    types: [labeled]
+    types: [opened]
 permissions:
   contents: write
   issues: write
   actions: write
+concurrency:
+  group: add-ingredient
 jobs:
   add:
-    if: github.event.label.name == 'approved-ingredient'
+    if: startsWith(github.event.issue.title, 'New ingredient:')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Append to community.json
+      - id: check
+        name: Fact-check online and add
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
         run: python3 .github/scripts/add_ingredient.py
-      - name: Commit and redeploy
+      - name: Publish and reply
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RESULT: ${{ steps.check.outputs.result }}
+          NUM: ${{ github.event.issue.number }}
         run: |
-          git config user.name "labellens-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add community.json
-          git commit -m "Add community ingredient from issue #${{ github.event.issue.number }}" || exit 0
-          git push
-          gh workflow run pages.yml
-          gh issue close ${{ github.event.issue.number }} --comment "Added to the shared glossary. It appears for everyone after the next deploy."
+          if [ "$RESULT" = "added" ]; then
+            git config user.name "labellens-bot"; git config user.email "bot@users.noreply.github.com"
+            git add community.json; git commit -m "Add community ingredient from issue #$NUM"
+            git pull --rebase origin main; git push
+            gh workflow run pages.yml
+            gh issue close "$NUM" --comment "Fact-checked against Wikipedia and PubMed and added to the shared glossary as neutral. It shows for everyone after the next deploy (about a minute)."
+          else
+            gh issue close "$NUM" --reason "not planned" --comment "Not added automatically: $RESULT."
+          fi

@@ -60,7 +60,7 @@
     return entry;
   }
   function issueUrl(entry) {
-    const body = "A scanner user suggests adding this ingredient. A maintainer should review the sources and edit the category and reason before approving (add the `approved-ingredient` label).\n\n```json\n" + JSON.stringify(entry, null, 2) + "\n```\n";
+    const body = "A scanner user suggests adding this ingredient. It is checked automatically against Wikipedia and PubMed, and added as neutral if it passes.\n\n```json\n" + JSON.stringify(entry, null, 2) + "\n```\n";
     return "https://github.com/Zayaiken21/LabelLens-IngredientFacts/issues/new?labels=new-ingredient&title=" + encodeURIComponent("New ingredient: " + entry.name) + "&body=" + encodeURIComponent(body.slice(0, 6500));
   }
   window.LLResearch = { research, draft, issueUrl };
