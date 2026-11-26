@@ -169,7 +169,7 @@
     const box = $("onlineBox"); box.hidden = false;
     const cmp = cmpNow(), nut = LLOnline.toNutrition(p, curBasis), bases = LLOnline.bases(p), badge = !cmp ? ["none", "Product found"] : cmp.verdict === "exact" ? ["exact", "Exact match " + cmp.score + "%"] : cmp.verdict === "close" ? ["close", "Close match " + cmp.score + "%"] : ["diff", "Different product " + cmp.score + "%"];
     box.innerHTML = `<div class="onl ${badge[0]}">
-      ${p.img ? `<img src="${esc(p.img)}" alt="" loading="lazy">` : ""}
+      ${p.img ? `<img src="${esc(p.img)}" alt="" loading="lazy">` : `<span class="pthumb big ph">${foodIcon(p.name)}</span>`}
       <div class="onlmeta"><b>${esc(p.name)}</b><small>${esc([p.brand, p.pkg || p.qty, p.src].filter(Boolean).join(" · "))}</small><span class="onlbadge">${esc(badge[1])}</span></div></div>
       ${cmp ? `<p class="small">${cmp.matched} of ${cmp.scanCount} scanned ingredients match the online list (${cmp.onlineCount} online).${cmp.unmatched.length ? ` Not found online: <b>${esc(cmp.unmatched.slice(0, 5).join(", "))}</b>.` : ""}${cmp.missing.length ? ` Online but not scanned: ${esc(cmp.missing.slice(0, 4).join(", "))}.` : ""}</p>` : (p.ing ? '<p class="small muted">Scan or paste the ingredient list to compare it with this product.</p>' : '<p class="small muted">This product has no ingredient list online.</p>')}
       ${nut._n && bases.length > 1 ? `<div class="basisrow">${bases.map(b => `<button class="${nut.which === b ? "on" : ""}" data-b="${b}">${BASIS_LABEL[b]}</button>`).join("")}</div>` : ""}
@@ -204,6 +204,12 @@
   }
   $("findCodeBtn").addEventListener("click", () => guard($("findCodeBtn"), () => lookupCode($("findCode").value)));
   $("findCode").addEventListener("keydown", e => { if (e.key === "Enter") $("findCodeBtn").click(); });
+  const FOOD_ICONS = [[/milk|dairy/i, "🥛"], [/gumm|candy|sweet|lollipop|licorice|jelly/i, "🍬"], [/chocolate|cocoa|bar\b/i, "🍫"], [/bread|bagel|roll|bun|muffin/i, "🍞"],
+    [/cheese/i, "🧀"], [/chip|crisp|snack|pretzel|popcorn/i, "🥨"], [/cookie|biscuit|cracker/i, "🍪"], [/cake|twinkie|pastry|donut|doughnut/i, "🍰"], [/juice/i, "🧃"],
+    [/soda|cola|pop\b|soft drink|energy drink|lemonade/i, "🥤"], [/water/i, "💧"], [/coffee|espresso/i, "☕"], [/tea\b/i, "🍵"], [/egg/i, "🥚"], [/chicken|beef|pork|meat|sausage|bacon|turkey/i, "🍗"],
+    [/fish|tuna|salmon|shrimp/i, "🐟"], [/rice/i, "🍚"], [/pasta|noodle|spaghetti/i, "🍝"], [/yogurt|yoghurt/i, "🥣"], [/cereal|oat/i, "🥣"], [/pizza/i, "🍕"], [/beer|wine|alcohol/i, "🍺"], [/apple|banana|fruit|berry|orange/i, "🍎"], [/vegetable|bean|carrot|tomato/i, "🥕"]];
+  const foodIcon = name => { const f = FOOD_ICONS.find(([re]) => re.test(name || "")); return f ? f[1] : "🍽️"; };
+  const thumb = p => p.img ? `<img class="pthumb" src="${esc(p.img)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'pthumb ph',textContent:'${foodIcon(p.name)}'}))">` : `<span class="pthumb ph">${foodIcon(p.name)}</span>`;
   let pickBrand = "", pickAll = [], pickScan = "";
   function renderPicks(list, scan, keep) {
     if (!keep) { pickBrand = ""; pickAll = list; pickScan = scan; }
@@ -224,7 +230,7 @@
         b.innerHTML = label; b.addEventListener("click", () => { showOnline(p); $("onlineBox").scrollIntoView({ behavior: "smooth", block: "nearest" }); }); return b;
       };
       const sc = g.main._score >= 0 ? ` · ingredients ${g.main._score}% match` : "";
-      wrap.appendChild(mk(g.main, `<b>${esc(g.main.name)}</b><small>${esc([g.main.brand, g.main.src].filter(Boolean).join(" · "))}${sc}</small>`, "main"));
+      wrap.appendChild(mk(g.main, `${thumb(g.main)}<span class="ptext"><b>${esc(g.main.name)}</b><small>${esc([g.main.brand, g.main.src].filter(Boolean).join(" · "))}${sc}</small></span>`, "main"));
       if (g.variants.length > 1) {
         const row = document.createElement("div"); row.className = "sizes"; row.innerHTML = `<small class="muted">${g.variants.length} sizes / packages:</small>`;
         g.variants.slice(0, 12).forEach(v => row.appendChild(mk(v, esc(LLOnline.sizeLabel(v)), "size")));
