@@ -155,7 +155,7 @@
   const online_err = e => e && e.quota ? `You have used all ${LLOnline.quota().cap} searches for this hour on this device. More unlock in about ${e.mins} min. Scanning a barcode and your scan still work.` :
     e && e.keyBad ? "The search key was rejected, so name search is paused. Barcode lookup and your scan still work." :
     e && (e.budget || (e.busy && e.fdc)) ? "The food database is busy right now. Try again in a few minutes, or scan the barcode. Your scan still works." :
-    e && e.search ? "Name search is unavailable right now (the free service limits it). Scan or type the barcode instead, that is more reliable. Your scan still works." : e && e.cool ? `The online database asked us to slow down. Try again in ${e.cool}s. Your scan still works.` :
+    e && e.search ? "Name search could not run" + (e.why ? " (" + e.why + ")" : "") + ". Try again in a minute, or scan or type the barcode instead. Your scan still works." : e && e.cool ? `The online database asked us to slow down. Try again in ${e.cool}s. Your scan still works.` :
     e && e.busy ? "The online database is busy right now. Your scan still works, try again in a minute." :
     e && e.message === "bad code" ? "That does not look like a barcode (8 to 14 digits)." :
     e && e.message === "short" ? "Type at least 3 letters." : "Could not reach the online database" + (e && e.detail ? " (" + e.detail + ")" : "") + ". Check your connection, then try again. Your scan still works.";
@@ -226,7 +226,7 @@
     findMsg("Searching… (name search is rate limited, so it can take a few seconds)");
     $("findList").innerHTML = "";
     let list; try { list = await LLOnline.search($("findName").value); }
-    catch (e) { if (e && (e.cool || e.busy || e.keyBad || e.quota || e.message === "short")) throw e; quotaTxt(); throw Object.assign(new Error("search"), { search: true }); }
+    catch (e) { if (e && (e.cool || e.busy || e.keyBad || e.quota || e.message === "short")) throw e; quotaTxt(); throw Object.assign(new Error("search"), { search: true, why: e && (e.why || e.detail) }); }
     const scan = $("ingText").value.trim();
     list.forEach(p => { const c = scan && p.ing ? LLOnline.compare(scan, p.ing) : null; p._score = c ? c.score : -1; });
     if (scan) list.sort((a, b) => (a._tier - b._tier) || (b._score - a._score));

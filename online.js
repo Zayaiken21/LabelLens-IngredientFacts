@@ -61,6 +61,7 @@
   const QCAP = 50, QKEY = "ll_search_calls";
   const qlist = () => { const now = Date.now(); try { return JSON.parse(localStorage.getItem(QKEY) || "[]").filter(x => now - x < 3600e3); } catch { return []; } };
   function quota() { const l = qlist(); return { cap: QCAP, used: l.length, left: Math.max(0, QCAP - l.length), mins: l.length ? Math.max(1, Math.ceil((l[0] + 3600e3 - Date.now()) / 60000)) : 0 }; }
+  function refund() { const l = qlist(); l.pop(); try { localStorage.setItem(QKEY, JSON.stringify(l)); } catch {} }
   function spend() {
     const q = quota(); if (q.left <= 0) throw Object.assign(new Error("quota"), { quota: true, mins: q.mins });
     const l = qlist(); l.push(Date.now()); try { localStorage.setItem(QKEY, JSON.stringify(l)); } catch {}
@@ -117,12 +118,19 @@
   /* name search: USDA first, Open Food Facts as backup/extra (world products). Either can fail without breaking the other. */
   async function search(q) {
     q = String(q || "").trim().replace(/[^\p{L}\p{N}\s'&.-]/gu, " ").replace(/\s+/g, " ").slice(0, 80); if (q.length < 3) throw new Error("short");
-    let out = [], err = null;
-    if (!cget("f:" + q)) spend();
-    try { out = await byNameFDC(q); } catch (e) { err = e; }
-    if (out.filter(p => tier(p, words(q).map(singular), words(q).map(singular).join(" ")) < 3).length < 3) { try { out = out.concat(await byName(q)); } catch (e) { err = err || e; } }
+    const qw = words(q).map(singular), qn = qw.join(" "), errs = {};
+    let out = [], spent = false;
+    if (!cget("f:" + q)) { spend(); spent = true; }
+    const note = (who, e) => { errs[who] = e; };
+    try { out = await byNameFDC(q); } catch (e) { note("USDA", e); }
+    if (out.filter(p => tier(p, qw, qn) < 3).length < 3) { try { out = out.concat(await byName(q)); } catch (e) { note("Open Food Facts", e); } }
     const seen = new Set(); out = out.filter(p => { const k = (p.code || "") + "|" + p.name.toLowerCase() + "|" + p.brand.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
-    if (!out.length && err) throw err;
+    if (!out.length && Object.keys(errs).length) {
+      if (spent) refund();                                          // a search that could not run does not use up the allowance
+      const first = Object.values(errs).find(e => e.cool || e.busy || e.keyBad) || Object.values(errs)[0];
+      const why = Object.entries(errs).map(([k, e]) => k + ": " + (e.detail || (e.cool ? "cooling down " + e.cool + "s" : e.busy ? "busy or rate limited" : e.message || "failed"))).join("; ");
+      throw Object.assign(first, { why });
+    }
     return rank(out, q).slice(0, 40);
   }
   function normalize(p) {
