@@ -358,6 +358,7 @@
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return toast("Camera is not available here. Use a photo instead.");
     $("camBox").hidden = false; hud("Starting camera…", "search"); $("camLive").textContent = "";
     $("camStart").disabled = true;
+    if (cam.stream) { cam.stream.getTracks().forEach(t => t.stop()); cam.stream = null; }
     try {
       cam.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
     } catch (e) {
@@ -368,6 +369,7 @@
     await new Promise(r => (v.onloadedmetadata = r)); try { await v.play(); } catch {}
     $("camView").style.aspectRatio = v.videoWidth + " / " + v.videoHeight;
     setupTrack();
+    $("camView").dataset.state = ""; $("camLockBadge").hidden = true; $("camLive").textContent = ""; setBar($("scanBar"), 0); $("scanStatus").textContent = "Starting…";
     Object.assign(cam, { run: true, last: "", stable: 0, bestRead: null, cand: null, candHits: 0, t0: Date.now(), n: 0, locking: false, nut: null, votes: new Map(), reads: 0, code: "", barRun: false });
     scanBusy = true; $("camCapture").classList.remove("pulse"); $("camCapture").textContent = "🔒 Lock now";
     $("liveCard").classList.add("scanning"); $("liveState").textContent = "Scanning…";
@@ -408,6 +410,16 @@
     $("liveCard").classList.remove("scanning");
   }
 
+  async function recognizeSafe(img) {                // a stuck reader is rebuilt instead of freezing the scan
+    let t; const timeout = new Promise((_, rej) => { t = setTimeout(() => rej(new Error("ocr-timeout")), 9000); });
+    try { return await Promise.race([cam.worker.recognize(img), timeout]); }
+    catch (e) {
+      if (e.message !== "ocr-timeout") throw e;
+      try { await cam.worker.terminate(); } catch {}
+      cam.worker = null; cam.worker = await Tesseract.createWorker("eng");
+      return { data: { text: "", lines: [], words: [] } };
+    } finally { clearTimeout(t); }
+  }
   async function camLoop() {
     try {
       hud("Loading reader…", "search");
@@ -421,7 +433,7 @@
         const rescue = (cam.n++ % 2 === 1) || soft || dark;
         const src = rescue ? enhanceFrame(burst.c, soft) : burst.c;
         hud(soft || dark ? "Reading a soft frame…" : "Reading…", cam.cand ? "found" : "search");
-        const { data } = await cam.worker.recognize(classicPrep(src));
+        const { data } = await recognizeSafe(classicPrep(src));
         if (!cam.run) break;
         const r = filterOCR(data), secs = (Date.now() - cam.t0) / 1000;
         if (r.nut && (!cam.nut || r.nut._n >= cam.nut._n)) cam.nut = r.nut;
@@ -458,13 +470,16 @@
   }
   async function lockScan(read, snapSrc) {
     if (cam.locking) return; cam.locking = true; cam.run = false;
+    try { return await lockScanInner(read, snapSrc); } finally { cam.locking = false; }
+  }
+  async function lockScanInner(read, snapSrc) {
     const snap = snapshotOf(snapSrc || $("camVideo"));
     if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
     setBar($("scanBar"), 100); $("scanStatus").textContent = "Locked";
     $("camView").dataset.state = "locked"; $("camLockBadge").hidden = false; hud("Locked ✔", "locked");
     try { $("camVideo").pause(); } catch {}
     await sleep(1100);
-    stopCam(); $("camLockBadge").hidden = true; cam.locking = false;
+    stopCam(); $("camLockBadge").hidden = true;
     const nut = (read.nut && read.nut._n >= 3) ? read.nut : cam.nut;
     if (read.ing) { liveReveal = true; $("ingText").value = finalizeIng(read.ing, cam); $("ingText").dispatchEvent(new Event("input")); }
     if (nut) setNut(nut);
