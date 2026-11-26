@@ -482,8 +482,8 @@
     $("nutAddSel").innerHTML = '<option value="">＋ Add a nutrient…</option>' + missing.map(f => `<option value="${f.k}">${f.label}</option>`).join("");
     $("nutAddSel").hidden = !missing.length;
     $("nutEmpty").hidden = have.length > 0; $("nutTools").hidden = !have.length;
-    $("nutBasis").textContent = have.length ? (nutBasis === "100g" ? "Values are per 100 g (or 100 ml)" : "Values are per serving" + (nutServing ? " · " + nutServing : "")) : "";
-    $("nutServLbl").firstChild.textContent = nutBasis === "100g" ? "Amount eaten (1 = 100 g or 100 ml) " : "Servings eaten ";
+    $("nutBasis").textContent = have.length ? (nutBasis === "100g" ? "Values are per 100 g (or 100 ml)" : nutBasis === "package" ? "Values are for the whole package" + (nutServing ? " · " + nutServing : "") : "Values are per serving" + (nutServing ? " · " + nutServing : "")) : "";
+    $("nutServLbl").firstChild.textContent = nutBasis === "100g" ? "Amount eaten (1 = 100 g or 100 ml) " : nutBasis === "package" ? "Packages eaten " : "Servings eaten ";
   }
   $("nutAddSel").addEventListener("change", e => { if (e.target.value) { nutShow.add(e.target.value); renderNut(); } });
   function setNut(n) {

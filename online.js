@@ -185,7 +185,7 @@
     put("carb", val("carbohydrates")); put("fib", val("fiber")); put("sug", val("sugars")); put("add", val("added-sugars")); put("pro", val("proteins"));
     put("pot", val("potassium", v => (v <= 5 ? v * 1000 : v))); put("calc", val("calcium", v => (v <= 3 ? v * 1000 : v))); put("iron", val("iron", v => (v <= 0.1 ? v * 1000 : v)));
     put("vitd", val("vitamin-d", v => (v < 0.001 ? v * 1e6 : v))); put("caf", val("caffeine", v => (v <= 3 ? v * 1000 : v)));
-    o.basis = basis === "100g" ? "100g" : "serving"; o.which = basis; o.bases = bases;
+    o.basis = basis; o.which = basis; o.bases = bases;
     o.serving = basis === "serving" ? (p.serving || p.servingG + " g") : basis === "package" ? "whole package (" + Math.round(p.packageG) + " g)" : "100 g";
     o._n = Object.keys(o).filter(k => !["basis", "serving", "_n", "which", "bases"].includes(k)).length; return o;
   }
