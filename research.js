@@ -17,13 +17,18 @@
   const NOTFOOD = /\b(surname|given name|village|municipality|film|album|band|footballer|politician|album|song|novel|company|town|commune|software|unit of|asteroid|species of (?:moth|beetle|fish)|disambiguation)\b/i;
   const sentence = t => { const m = String(t || "").replace(/\s+/g, " ").match(/^(.{40,400}?[.!?])(\s|$)/); return (m ? m[1] : String(t || "").slice(0, 300)).trim(); };
 
+  /* label words that name a topic, not a food: searched under the article that really covers them */
+  const TOPIC = [[/bio[\s-]?engineer|genetically[\s-]+(?:engineered|modified)|\bgmo\b|gm (?:food|crop|corn|soy)/i, "genetically modified food"],
+                 [/lab[\s-]?grown|cell[\s-]?cultur|cultivated meat|cell[\s-]?based meat/i, "cultured meat"]];
+  const topicOf = t => { const f = TOPIC.find(([re]) => re.test(t)); return f ? f[1] : ""; };
   async function research(term) {
     term = String(term || "").trim().replace(/\s+/g, " ").slice(0, 60); if (term.length < 3) throw new Error("short");
+    const topic = topicOf(term), searchAs = topic || term;
     const key = term.toLowerCase(), cache = load(); if (cache[key] && Date.now() - cache[key].t < 30 * 864e5) return cache[key].v;
     const out = { term, wiki: null, papers: [], paperCount: 0, score: 0, evidence: [], verdict: "unknown" };
     // 1) what is it (Wikipedia, best match for "<term> food")
     try {
-      const j = await getJSON(`https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch=${encodeURIComponent(term + " food ingredient")}&gsrlimit=1&prop=extracts|pageprops&exintro=1&explaintext=1&exchars=700`, 300);
+      const j = await getJSON(`https://en.wikipedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrsearch=${encodeURIComponent(topic ? topic : term + " food ingredient")}&gsrlimit=1&prop=extracts|pageprops&exintro=1&explaintext=1&exchars=700`, 300);
       const pg = j && j.query && j.query.pages ? Object.values(j.query.pages)[0] : null;
       if (pg && pg.extract) {
         const titleHit = pg.title.toLowerCase().includes(key.split(" ")[0]) || key.includes(pg.title.toLowerCase());
@@ -35,7 +40,7 @@
     } catch (e) { out.evidence.push("Could not reach Wikipedia (" + (e.detail || "network") + ")."); }
     // 2) research papers (PubMed titles only)
     try {
-      const q = encodeURIComponent(`"${term}"[Title/Abstract] AND (food OR diet OR nutrition OR dietary OR supplement)`);
+      const q = encodeURIComponent(`"${searchAs}"[Title/Abstract] AND (food OR diet OR nutrition OR dietary OR health)`);
       const s = await getJSON(`https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=5&sort=relevance&term=${q}`, 450);
       const ids = (s.esearchresult && s.esearchresult.idlist) || []; out.paperCount = +((s.esearchresult && s.esearchresult.count) || 0);
       if (out.paperCount >= 5) { out.score += 1; out.evidence.push(out.paperCount + " research papers mention it together with food or diet."); }
@@ -63,5 +68,5 @@
     const body = "A scanner user suggests adding this ingredient. It is checked automatically against Wikipedia and PubMed, and added as neutral if it passes.\n\n```json\n" + JSON.stringify(entry, null, 2) + "\n```\n";
     return "https://github.com/Zayaiken21/LabelLens-IngredientFacts/issues/new?labels=new-ingredient&title=" + encodeURIComponent("New ingredient: " + entry.name) + "&body=" + encodeURIComponent(body.slice(0, 6500));
   }
-  window.LLResearch = { research, draft, issueUrl };
+  window.LLResearch = { research, draft, issueUrl, topicOf };
 })();

@@ -330,17 +330,6 @@
       return reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(c)))).getText().replace(/\D/g, "");
     } catch { return ""; }
   }
-  $("barFile").addEventListener("change", async e => {
-    const f = e.target.files[0]; e.target.value = ""; if (!f) return;
-    try {
-      let bmp; try { bmp = await createImageBitmap(f, { imageOrientation: "from-image" }); } catch { bmp = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = URL.createObjectURL(f); }); }
-      const w = bmp.width || bmp.naturalWidth, h = bmp.height || bmp.naturalHeight, k = Math.min(1, 1600 / Math.max(w, h));
-      const c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(h * k); c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
-      const code = await barcodeFromCanvas(c);
-      if (!code) return toast("No barcode found in that photo. Move closer and keep the barcode flat and sharp.");
-      $("findCode").value = code; guard($("findCodeBtn"), () => lookupCode(code, true));
-    } catch { toast("Could not read that photo"); }
-  });
   async function detectBarcode() {
     const v = $("camVideo"); if (!v.videoWidth) return "";
     try {
@@ -356,17 +345,18 @@
     return "";
   }
   async function barLoop() {
-    if (!(await initBarcode())) return;
+    if (!(await initBarcode())) { if (cam.mode === "barcode") { toast("The barcode reader needs an internet connection the first time. Check your connection and try again."); stopCam(); } return; }
     cam.barRun = true;
     while (cam.run && !cam.code) {
       const code = await detectBarcode();
       if (code && LLOnline.ean13ok(code.replace(/\D/g, ""))) {
         cam.code = code.replace(/\D/g, ""); $("findCode").value = cam.code; if (navigator.vibrate) navigator.vibrate(40);
         hud("Barcode " + cam.code + " found, matching online…", "found");
+        if (cam.mode === "barcode") stopCam();
         guard($("findCodeBtn"), () => lookupCode(cam.code, true));
         break;
       }
-      await sleep(bdet ? 350 : 900);
+      await sleep(400);
     }
   }
 
@@ -425,8 +415,8 @@
     return best;
   }
 
-  async function startCam() {
-    if (!window.Tesseract) return toast("Reader is still loading. Try again in a moment.");
+  async function startCam(mode) {
+    if (mode !== "barcode" && !window.Tesseract) return toast("Reader is still loading. Try again in a moment.");
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return toast("Camera is not available here. Use a photo instead.");
     $("camBox").hidden = false; hud("Starting camera…", "search"); $("camLive").textContent = "";
     $("camStart").disabled = true;
@@ -446,6 +436,8 @@
     scanBusy = true; $("camCapture").classList.remove("pulse"); $("camCapture").textContent = "🔒 Lock now";
     $("liveCard").classList.add("scanning"); $("liveState").textContent = "Scanning…";
     $("camBox").scrollIntoView({ behavior: "smooth", block: "start" });
+    cam.mode = mode || "label";
+    if (cam.mode === "barcode") { hud("Hold the barcode inside the frame", "search"); barLoop(); return; }
     camLoop(); barLoop();
   }
   function setupTrack() {                           // continuous focus, light, zoom where the device allows
@@ -600,7 +592,8 @@
     window.LL.addFood({ name, meal: $("nutMeal").value, color, serv, nut: { ...nutVals } });
     toast("Added to today's diary ✔ (" + serv + " serving" + (serv === 1 ? "" : "s") + ")");
   });
-  $("camStart").addEventListener("click", startCam);
+  $("camStart").addEventListener("click", () => startCam("label"));
+  $("barStart").addEventListener("click", () => { if (cam.run) stopCam(); $("findCode").value = ""; startCam("barcode"); });
   $("camStop").addEventListener("click", stopCam);
   $("camCapture").addEventListener("click", () => {
     const b = cam.bestRead || cam.cand;
@@ -694,6 +687,9 @@
   try { $("strictBio").checked = localStorage.getItem("ll_strictbio") !== "0"; } catch {}
   $("strictBio").addEventListener("change", () => { try { localStorage.setItem("ll_strictbio", $("strictBio").checked ? "1" : "0"); } catch {} if (current) { current = { text: current.text, ...E.analyze(current.text) }; renderResults(); } });
   function renderResults() {
+    const bio = current && (current.zeroed || current.watchList.some(w => /bioengineered|lab-grown/i.test(w.entry.name)));
+    $("bioHelp").innerHTML = bio ? `<button class="btn" id="bioOpen">🔬 Read the online research on bioengineered foods</button><p class="muted small">Opens a summary from Wikipedia and PubMed paper titles for “genetically modified food”. Read the sources yourself.</p>` : "";
+    if (bio) $("bioOpen").addEventListener("click", () => openResearch("genetically modified food"));
     $("emptyResults").hidden = true; $("resultsBody").hidden = false;
     const s = scoreInfo(current);
     const ring = $("scoreRing");
