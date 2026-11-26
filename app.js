@@ -193,13 +193,14 @@
   const nutHas = () => Object.keys(nutVals).length > 0;
   async function lookupCode(code, quiet) {
     findMsg("Looking up " + code + "… (requests are spaced out to stay within the service limits)");
+    online = null; $("onlineBox").hidden = true; $("onlineBox").innerHTML = "";     // never keep showing the previous item
     const p = await LLOnline.byBarcode(code);
-    if (!p) { findMsg("No product with barcode " + code + " is in the online database yet. You can still use the scan, or search by name."); return null; }
-    findMsg(""); showOnline(p); if (!quiet) toast("Found online: " + p.name);
-    if (quiet) {                                   // came from the camera: fill in everything the product has, without overwriting what was already scanned
-      if (p.ing && !$("ingText").value.trim()) { setIng(p.ing); toast("Ingredients filled from barcode"); }
-      const nut = LLOnline.toNutrition(p, ""); if (nut._n && !nutHas()) { setNut(nut); toast("Nutrition filled from barcode"); }
-    }
+    if (!p) { findMsg("No product with barcode " + code + " is in the online databases yet. You can still use the scan, or search by name."); return null; }
+    findMsg(""); curBasis = ""; showOnline(p); if (!quiet) toast("Found online: " + p.name);
+    // a barcode is the item in front of the camera or typed in: its ingredients and nutrition replace whatever was there before
+    if (p.ing) setIng(p.ing);
+    const nut = LLOnline.toNutrition(p, ""); if (nut._n) setNut(nut);
+    toast("Barcode: " + p.name + (p.ing || nut._n ? " (ingredients and nutrition filled)" : " (no ingredients or nutrition in the database)"));
     return p;
   }
   $("findCodeBtn").addEventListener("click", () => guard($("findCodeBtn"), () => lookupCode($("findCode").value)));
@@ -483,7 +484,8 @@
     const nut = (read.nut && read.nut._n >= 3) ? read.nut : cam.nut;
     if (read.ing) { liveReveal = true; $("ingText").value = finalizeIng(read.ing, cam); $("ingText").dispatchEvent(new Event("input")); }
     if (nut) setNut(nut);
-    if (online) showOnline(online);
+    if (online && cam.code && online.code === cam.code) showOnline(online);    // the barcode just scanned keeps its panel
+    else if (online) { online = null; $("onlineBox").hidden = true; $("onlineBox").innerHTML = ""; }   // a different item: don't show the previous one
     const blob = await canvasToBlob(snap, "image/jpeg", 0.82);
     if (blob) { showSnap(blob); currentPhoto = blob; }
     toast(read.ing && nut ? "Locked: ingredients and nutrition captured" : read.ing ? "Locked. Now scan the Nutrition Facts side too, or Analyze" : "Locked nutrition. Now scan the ingredient list");

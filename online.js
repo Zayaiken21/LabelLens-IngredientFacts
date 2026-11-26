@@ -45,7 +45,14 @@
   async function byBarcode(code) {
     code = String(code || "").replace(/\D/g, ""); if (!validCode(code)) throw new Error("bad code");
     const j = await polite("product", `${OFF}/api/v2/product/${code}.json?fields=${FIELDS}`, "p:" + code);
-    return j && j.status !== 0 && j.product ? normalize(j.product) : null;
+    if (j && j.status !== 0 && j.product) return normalize(j.product);
+    // not in Open Food Facts: many US barcodes are in the USDA database under their UPC
+    try {
+      const u = `${FDC}/foods/search?api_key=${encodeURIComponent(fdcKey())}&query=${encodeURIComponent(code)}&dataType=Branded&pageSize=10`;
+      const list = await polite("fdc", u, "fc:" + code, j2 => (j2 && Array.isArray(j2.foods) ? j2.foods : []).filter(f => String(f.gtinUpc || "").replace(/\D/g, "").replace(/^0+/, "") === code.replace(/^0+/, "")).map(f => { try { return fromFDC(f); } catch { return null; } }).filter(Boolean));
+      if (list && list.length) return list[0];
+    } catch {}
+    return null;
   }
   async function byName(q) {
     q = String(q || "").trim().toLowerCase().slice(0, 80); if (q.length < 3) throw new Error("short");
