@@ -96,6 +96,24 @@
   }
 
   /* The ORIGINAL prep: grayscale + contrast, upscale small crops. */
+  /* crinkled or shadowed packs: local (adaptive) black-and-white so text stays crisp where the light changes */
+  function binPrep(canvas) {
+    const scale = canvas.width < 1800 ? 1800 / canvas.width : 1;
+    const w = Math.round(canvas.width * scale), h = Math.round(canvas.height * scale);
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    const ctx = c.getContext("2d", { willReadFrequently: true }); ctx.drawImage(canvas, 0, 0, w, h);
+    const im = ctx.getImageData(0, 0, w, h), d = im.data, g = new Float32Array(w * h);
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) g[j] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    const R = Math.max(12, Math.round(Math.min(w, h) / 40)), integ = new Float64Array((w + 1) * (h + 1));
+    for (let y = 0; y < h; y++) { let row = 0; for (let x = 0; x < w; x++) { row += g[y * w + x]; integ[(y + 1) * (w + 1) + x + 1] = integ[y * (w + 1) + x + 1] + row; } }
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const x0 = Math.max(0, x - R), x1 = Math.min(w, x + R + 1), y0 = Math.max(0, y - R), y1 = Math.min(h, y + R + 1);
+      const sum = integ[y1 * (w + 1) + x1] - integ[y0 * (w + 1) + x1] - integ[y1 * (w + 1) + x0] + integ[y0 * (w + 1) + x0];
+      const mean = sum / ((x1 - x0) * (y1 - y0));
+      const v = g[y * w + x] > mean - 10 ? 255 : 0, k = (y * w + x) * 4; d[k] = d[k + 1] = d[k + 2] = v; d[k + 3] = 255;
+    }
+    ctx.putImageData(im, 0, 0); return c;
+  }
   function classicPrep(canvas) {
     const scale = canvas.width < 1400 ? 1400 / canvas.width : 1;
     const out = document.createElement("canvas");
@@ -150,10 +168,13 @@
     if (!n) return ""; const F = window.LLNut.FIELDS.filter(f => n[f.k] != null);
     return F.length ? "  ·  Nutrition seen: " + F.slice(0, 6).map(f => f.label + " " + n[f.k] + (f.unit === "kcal" ? "" : f.unit)).join(", ") : "";
   }
-  function finalizeIng(text, cam) {                // keep items seen in at least 2 reads once we have 3+ reads
-    if (!text || cam.reads < 3) return text;
-    const kept = topItems(text).filter(it => (cam.votes.get(LLOnline.normalizeKey(it)) || 0) >= 2);
-    return kept.length >= 2 ? kept.join(", ") : text;
+  function finalizeIng(text, cam) {                // every ingredient seen in any read; a word read only once must be a known ingredient to be kept
+    if (!text) return text;
+    const E = window.IngredientEngine, out = [], seen = new Set();
+    const add = it => { const k = LLOnline.normalizeKey(it); if (!k || seen.has(k)) return; seen.add(k); out.push(it); };
+    topItems(text).forEach(it => { const k = LLOnline.normalizeKey(it); const n = cam.votes.get(k) || 0; if (n >= 2 || (E && E.matches(it).length) || cam.reads < 2) add(it); });
+    cam.first.forEach((it, k) => { if (!seen.has(k) && (cam.votes.get(k) || 0) >= 2) add(it); });
+    return out.length ? out.join(", ") : text;
   }
 
   /* ----- online match (Open Food Facts) ----- */
@@ -170,6 +191,16 @@
   function cmpNow() { return online && $("ingText").value.trim() && online.ing ? LLOnline.compare($("ingText").value, online.ing) : null; }
   let curBasis = "";
   const BASIS_LABEL = { serving: "Per serving", "100g": "Per 100 g", package: "Whole package" };
+  const PROCESS = ["", "Unprocessed or minimally processed (NOVA 1)", "Processed culinary ingredient (NOVA 2)", "Processed food (NOVA 3)", "Ultra-processed (NOVA 4)"];
+  function procLine(p) {
+    const bits = [];
+    if (p.nova && PROCESS[p.nova]) bits.push(`<span class="${p.nova >= 4 ? "bad" : p.nova === 3 ? "warnc" : "good"}">${PROCESS[p.nova]}</span>`);
+    if (p.nutri) bits.push("Nutri-Score " + String(p.nutri).toUpperCase());
+    const bio = /bio[\s-]?engineer|genetically[\s-]+(?:engineered|modified)|\bgmo\b|lab[\s-]?grown|cell[\s-]?cultur/i.test(p.ing || "");
+    bits.push(bio ? '<span class="bad">⚠ Bioengineered ingredient listed</span>' : "No bioengineering stated in its ingredient list");
+    if (!p.nova) bits.push("Processing level not in this database for this item");
+    return `<p class="small procline">${bits.join(" · ")}</p>`;
+  }
   function showOnline(p) {
     if (!online || online.code !== p.code || online.name !== p.name) curBasis = "";
     online = p; document.querySelectorAll("#findList .pick").forEach(b => b.classList.toggle("sel", b._p === p));
@@ -178,6 +209,7 @@
     box.innerHTML = `<div class="onl ${badge[0]}">
       ${p.img ? `<img src="${esc(p.img)}" alt="" loading="lazy">` : `<span class="pthumb big ph">${foodIcon(p.name)}</span>`}
       <div class="onlmeta"><b>${esc(p.name)}</b><small>${esc([p.brand, p.pkg || p.qty, p.src].filter(Boolean).join(" · "))}</small><span class="onlbadge">${esc(badge[1])}</span></div></div>
+      ${procLine(p)}
       ${cmp ? `<p class="small">${cmp.matched} of ${cmp.scanCount} scanned ingredients match the online list (${cmp.onlineCount} online).${cmp.unmatched.length ? ` Not found online: <b>${esc(cmp.unmatched.slice(0, 5).join(", "))}</b>.` : ""}${cmp.missing.length ? ` Online but not scanned: ${esc(cmp.missing.slice(0, 4).join(", "))}.` : ""}</p>` : (p.ing ? '<p class="small muted">Scan or paste the ingredient list to compare it with this product.</p>' : '<p class="small muted">This product has no ingredient list online.</p>')}
       ${nut._n && bases.length > 1 ? `<div class="basisrow">${bases.map(b => `<button class="${nut.which === b ? "on" : ""}" data-b="${b}">${BASIS_LABEL[b]}</button>`).join("")}</div>` : ""}
       <div class="row">
@@ -287,6 +319,28 @@
     if ("BarcodeDetector" in window) { try { bdet = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] }); return true; } catch {} }
     return loadZX();
   }
+  async function barcodeFromCanvas(c) {            // a photo of a barcode, read with the same decoders as the live camera
+    try {
+      if ("BarcodeDetector" in window) { const d = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e"] }); const r = await d.detect(c); if (r[0]) return r[0].rawValue.replace(/\D/g, ""); }
+    } catch {}
+    if (!(await loadZX())) return "";
+    try {
+      const Z = window.ZXing, reader = new Z.MultiFormatReader(), hints = new Map();
+      hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E]); hints.set(Z.DecodeHintType.TRY_HARDER, true); reader.setHints(hints);
+      return reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(c)))).getText().replace(/\D/g, "");
+    } catch { return ""; }
+  }
+  $("barFile").addEventListener("change", async e => {
+    const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+    try {
+      let bmp; try { bmp = await createImageBitmap(f, { imageOrientation: "from-image" }); } catch { bmp = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = URL.createObjectURL(f); }); }
+      const w = bmp.width || bmp.naturalWidth, h = bmp.height || bmp.naturalHeight, k = Math.min(1, 1600 / Math.max(w, h));
+      const c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(h * k); c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+      const code = await barcodeFromCanvas(c);
+      if (!code) return toast("No barcode found in that photo. Move closer and keep the barcode flat and sharp.");
+      $("findCode").value = code; guard($("findCodeBtn"), () => lookupCode(code, true));
+    } catch { toast("Could not read that photo"); }
+  });
   async function detectBarcode() {
     const v = $("camVideo"); if (!v.videoWidth) return "";
     try {
@@ -317,7 +371,7 @@
   }
 
   /* ----- live camera scanner ----- */
-  const cam = { stream: null, track: null, run: false, worker: null, last: "", stable: 0, bestRead: null, cand: null, candHits: 0, t0: 0, n: 0, locking: false, nut: null, votes: new Map(), reads: 0, code: "", barRun: false };
+  const cam = { stream: null, track: null, run: false, worker: null, last: "", stable: 0, bestRead: null, cand: null, candHits: 0, t0: 0, n: 0, locking: false, nut: null, votes: new Map(), first: new Map(), reads: 0, code: "", barRun: false };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const hud = (t, state) => { $("camHud").textContent = t; if (state) $("camView").dataset.state = state; };
 
@@ -388,7 +442,7 @@
     $("camView").style.aspectRatio = v.videoWidth + " / " + v.videoHeight;
     setupTrack();
     $("camView").dataset.state = ""; $("camLockBadge").hidden = true; $("camLive").textContent = ""; setBar($("scanBar"), 0); $("scanStatus").textContent = "Starting…";
-    Object.assign(cam, { run: true, last: "", stable: 0, bestRead: null, cand: null, candHits: 0, t0: Date.now(), n: 0, locking: false, nut: null, votes: new Map(), reads: 0, code: "", barRun: false });
+    Object.assign(cam, { run: true, last: "", stable: 0, bestRead: null, cand: null, candHits: 0, t0: Date.now(), n: 0, locking: false, nut: null, votes: new Map(), first: new Map(), reads: 0, code: "", barRun: false });
     scanBusy = true; $("camCapture").classList.remove("pulse"); $("camCapture").textContent = "🔒 Lock now";
     $("liveCard").classList.add("scanning"); $("liveState").textContent = "Scanning…";
     $("camBox").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -453,8 +507,9 @@
         // alternate prep: original, and a rescue version for soft or dark frames
         const rescue = (cam.n++ % 2 === 1) || soft || dark;
         const src = rescue ? enhanceFrame(burst.c, soft) : burst.c;
-        hud(soft || dark ? "Reading a soft frame…" : "Reading…", cam.cand ? "found" : "search");
-        const { data } = await recognizeSafe(classicPrep(src));
+        const useBin = soft || dark || cam.n % 3 === 2;
+        hud(soft || dark ? "Reading a soft or crinkled frame…" : "Reading…", cam.cand ? "found" : "search");
+        const { data } = await recognizeSafe(useBin ? binPrep(src) : classicPrep(src));
         if (!cam.run) break;
         const r = filterOCR(data), secs = (Date.now() - cam.t0) / 1000;
         if (r.nut && (!cam.nut || r.nut._n >= cam.nut._n)) cam.nut = r.nut;
@@ -466,7 +521,7 @@
           $("camLive").textContent = (r.hits ? "…" + r.text.slice(0, 160) : "") + nutLine(r.nutRaw);
           hud(burst.sh < 25 ? "Hold steady, tap the screen to focus" : dark ? "Too dark. Tap 🔦 or add light" : "Fit the ingredient list inside the frame", r.hits ? "found" : "search");
         } else {
-          if (r.ing) { cam.reads++; topItems(r.ing).forEach(it => { const k = LLOnline.normalizeKey(it); if (k) cam.votes.set(k, (cam.votes.get(k) || 0) + 1); }); }
+          if (r.ing) { cam.reads++; topItems(r.ing).forEach(it => { const k = LLOnline.normalizeKey(it); if (!k) return; cam.votes.set(k, (cam.votes.get(k) || 0) + 1); if (!cam.first.has(k)) cam.first.set(k, it); }); }
           const same = cam.last && jaccard(wordSet(r.text), wordSet(cam.last)) >= 0.55;
           cam.stable = same ? cam.stable + 1 : 0; cam.last = r.text;
           if (!same || r.text.length >= ((cam.bestRead && cam.bestRead.text) || "").length * 0.8) cam.bestRead = r;
@@ -563,9 +618,17 @@
       const w = bmp.width || bmp.naturalWidth, h = bmp.height || bmp.naturalHeight, k = Math.min(1, 2400 / Math.max(w, h));
       const c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(h * k);
       c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+      const code = await barcodeFromCanvas(c);
+      if (code) { $("findCode").value = code; toast("Barcode " + code + " read from the photo"); await lookupCode(code, true); return; }
       cam.worker = cam.worker || await Tesseract.createWorker("eng");
-      const { data } = await cam.worker.recognize(classicPrep(c));
-      const r = filterOCR(data);
+      const a = filterOCR((await cam.worker.recognize(classicPrep(c))).data), b2 = filterOCR((await cam.worker.recognize(binPrep(c))).data);
+      const r = (b2.ing.length > a.ing.length) ? Object.assign({}, b2, { text: b2.text }) : a;
+      if (!r.ok && b2.ok) Object.assign(r, b2);
+      if (r.ing && a.ing && b2.ing && a.ing !== b2.ing) {          // merge both passes so no word is lost
+        const seen = new Set(), merged = [];
+        [...topItems(a.ing), ...topItems(b2.ing)].forEach(it => { const k = LLOnline.normalizeKey(it); if (k && !seen.has(k)) { seen.add(k); merged.push(it); } });
+        r.ing = merged.join(", "); r.text = r.ing;
+      }
       if (!r.ok) { $("liveState").textContent = "No ingredient list found"; return toast("No ingredient list found in that photo. Try the live scanner and fit the list in the frame."); }
       lockScan(r, c);
     } catch (err) { console.error(err); toast("Could not read that photo"); }
