@@ -232,7 +232,8 @@ window.IngredientEngine = {
   /* All ingredient tokens, including the sub-ingredients inside brackets */
   parse(raw) {
     const out = [];
-    this.splitTop(this.clean(raw)).forEach(t => {
+    const tidy = t => t.replace(/\(\s*as\s+[^()]*\)?/gi, "").replace(/\s+/g, " ").replace(/^[\s)\]]+|[\s(\[]+$/g, "").replace(/\s*\)$/, "").trim();   // drop "(as a preservative)" and stray brackets from OCR
+    this.splitTop(this.clean(raw)).map(tidy).filter(Boolean).forEach(t => {
       out.push(t);
       const m = t.match(/[(\[](.+)[)\]]/);
       if (m) m[1].split(/[,;]/).forEach(s => { const x = s.trim(); if (x) out.push(x); });

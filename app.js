@@ -127,12 +127,19 @@
     });
     const raw = correctWords(cleanOCR(keep.join(" ")));
     const N = window.LLNut, nut = N.parse(raw), ex = N.extractIngredients(raw);
+    const BIO = /bio[\s-]?engineer|genetically[\s-]+(?:engineered|modified)|\bgmo\b|lab[\s-]?grown|cell[\s-]?cultur|cultivated meat/i;
+    const bio = BIO.test(raw);
     const toks = ex.text.toLowerCase().split(/[^a-z]+/).filter(w => w.length >= 3);
     const hits = toks.filter(w => vocabSet.has(w)).length;
     const ingOk = ex.count >= 1 && ex.text.length >= 10 && (ex.hasHeading ? hits >= 1 : hits >= 2 && hits / Math.max(1, toks.length) >= 0.2);
     const nutOk = nut._n >= 3;
-    const text = ingOk ? ex.text : nutOk ? "Nutrition: " + N.FIELDS.filter(f => nut[f.k] != null).map(f => f.label + " " + nut[f.k]).join(", ") : ex.text;
-    return { text, ing: ingOk ? ex.text : "", nut: nutOk ? nut : null, nutRaw: nut, ok: ingOk || nutOk, hits: ingOk ? hits : nutOk ? nut._n : hits, total: toks.length };
+    let text = ingOk ? ex.text : nutOk ? "Nutrition: " + N.FIELDS.filter(f => nut[f.k] != null).map(f => f.label + " " + nut[f.k]).join(", ") : ex.text;
+    let ing = ingOk ? ex.text : "";
+    if (bio) {                                       // "Contains bioengineered food ingredients" counts even when the ingredient list is hard to read
+      const tag = "bioengineered food ingredient (label disclosure)";
+      ing = ing ? ing + ", " + tag : tag; text = text ? text + ", " + tag : tag;
+    }
+    return { text, ing, bio, nut: nutOk ? nut : null, nutRaw: nut, ok: ingOk || nutOk || bio, hits: ingOk ? hits : nutOk ? nut._n : hits, total: toks.length };
   }
   const wordSet = t => new Set(t.toLowerCase().split(/[^a-z]+/).filter(w => w.length >= 3));
   const jaccard = (a, b) => { let i = 0; a.forEach(x => b.has(x) && i++); return i / Math.max(1, a.size + b.size - i); };
@@ -198,7 +205,7 @@
     if (!p) { findMsg("No product with barcode " + code + " is in the online databases yet. You can still use the scan, or search by name."); return null; }
     findMsg(""); curBasis = ""; showOnline(p); if (!quiet) toast("Found online: " + p.name);
     // a barcode is the item in front of the camera or typed in: its ingredients and nutrition replace whatever was there before
-    if (p.ing) setIng(p.ing);
+    if (p.ing) { setIng(p.ing); autoCheck(p.ing); }
     const nut = LLOnline.toNutrition(p, ""); if (nut._n) setNut(nut);
     toast("Barcode: " + p.name + (p.ing || nut._n ? " (ingredients and nutrition filled)" : " (no ingredients or nutrition in the database)"));
     return p;
@@ -211,6 +218,16 @@
     [/fish|tuna|salmon|shrimp/i, "🐟"], [/rice/i, "🍚"], [/pasta|noodle|spaghetti/i, "🍝"], [/yogurt|yoghurt/i, "🥣"], [/cereal|oat/i, "🥣"], [/pizza/i, "🍕"], [/beer|wine|alcohol/i, "🍺"], [/apple|banana|fruit|berry|orange/i, "🍎"], [/vegetable|bean|carrot|tomato/i, "🥕"]];
   const foodIcon = name => { const f = FOOD_ICONS.find(([re]) => re.test(name || "")); return f ? f[1] : "🍽️"; };
   const thumb = p => p.img ? `<img class="pthumb" src="${esc(p.img)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'pthumb ph',textContent:'${foodIcon(p.name)}'}))">` : `<span class="pthumb ph">${foodIcon(p.name)}</span>`;
+  const checked = new Map();                       // word -> "ingredient" | "maybe" | "word" once researched
+  async function autoCheck(text) {                 // fact-check the unknown words of a barcode product, a few at a time, cached and spaced out
+    const E = window.IngredientEngine; if (!E || !window.LLResearch) return;
+    const todo = E.parse(text).filter(t => /[A-Za-z]{3}/.test(t) && !E.matches(t).length && !checked.has(t)).slice(0, 4);
+    for (const t of todo) {
+      try { const r = await LLResearch.research(t); checked.set(t, r.verdict); } catch { checked.set(t, "error"); }
+      liveScan();
+      await sleep(800);
+    }
+  }
   let pickBrand = "", pickAll = [], pickScan = "";
   function renderPicks(list, scan, keep) {
     if (!keep) { pickBrand = ""; pickAll = list; pickScan = scan; }
@@ -411,11 +428,14 @@
     $("liveCard").classList.remove("scanning");
   }
 
-  async function recognizeSafe(img) {                // a stuck reader is rebuilt instead of freezing the scan
-    let t; const timeout = new Promise((_, rej) => { t = setTimeout(() => rej(new Error("ocr-timeout")), 9000); });
-    try { return await Promise.race([cam.worker.recognize(img), timeout]); }
+  let ocrTimeouts = 0;
+  async function recognizeSafe(img) {                // only a reader that is truly stuck (no answer for 30 s, twice) is rebuilt
+    let t; const timeout = new Promise((_, rej) => { t = setTimeout(() => rej(new Error("ocr-timeout")), 30000); });
+    try { const r = await Promise.race([cam.worker.recognize(img), timeout]); ocrTimeouts = 0; return r; }
     catch (e) {
       if (e.message !== "ocr-timeout") throw e;
+      if (++ocrTimeouts < 2) return { data: { text: "", lines: [], words: [] } };
+      ocrTimeouts = 0;
       try { await cam.worker.terminate(); } catch {}
       cam.worker = null; cam.worker = await Tesseract.createWorker("eng");
       return { data: { text: "", lines: [], words: [] } };
@@ -586,7 +606,7 @@
   function scoreInfo(cur) {
     const r = cur.redList.length, y = cur.yellowList.length, g = cur.goodList.length, n = cur.tokens.length, s = cur.score;
     const plural = (k, w) => k + " " + w + (k === 1 ? "" : "s");
-    if (cur.zeroed) return { c: "var(--bad)", l: "Scored 0: bioengineered / lab-grown", sub: "The label mentions a bioengineered or lab-grown ingredient, and your strict rule gives those a 0. Regulators have not found approved ones unsafe, so this is your personal rule, not a poison finding. You can turn it off below." };
+    if (cur.zeroed) return { c: "var(--bad)", l: "⚠ Scored 0: bioengineered / lab-grown", sub: "Warning: this label says it contains a bioengineered or lab-grown ingredient. Your strict rule scores that 0. Real, whole food is the goal. Regulators have not found approved ones unsafe, so this is your personal rule. You can turn it off below." };
     if (!r && !y) return { c: "var(--good)", l: g ? "Clean label" : "Nothing flagged",
       sub: `We checked ${plural(n, "ingredient")} and none are on our watch list${g ? `. ${plural(g, "good ingredient")} stood out` : ""}. Ingredients we do not know yet stay gray.` };
     if (s >= 70) return { c: "var(--good)", l: "Mostly fine", sub: `${plural(r + y, "ingredient")} worth a look out of ${n}, none serious. Details are below.` };
@@ -726,7 +746,7 @@
     if (unk.length) {
       const u = document.createElement("div"); u.innerHTML = '<p class="muted small">Not in our list yet. Tap one to research it and add it:</p>';
       const r2 = document.createElement("div"); r2.className = "chips";
-      unk.forEach(w => { const b = document.createElement("button"); b.className = "chip plain"; b.textContent = "🔬 " + (w.length > 38 ? w.slice(0, 36) + "…" : w); b.addEventListener("click", () => openResearch(w)); r2.appendChild(b); });
+      unk.forEach(w => { const b = document.createElement("button"); b.className = "chip plain"; const v = checked.get(w); const mark = v === "ingredient" ? "✅ " : v === "maybe" ? "❔ " : v === "word" ? "❌ " : "🔬 "; b.textContent = mark + (w.length > 38 ? w.slice(0, 36) + "…" : w); b.addEventListener("click", () => openResearch(w)); r2.appendChild(b); });
       u.appendChild(r2); box.appendChild(u);
     }
   }
