@@ -416,7 +416,10 @@
   }
 
   async function startCam(mode) {
-    if (mode !== "barcode" && !window.Tesseract) return toast("Reader is still loading. Try again in a moment.");
+    try { return await startCamInner(mode); }
+    catch (err) { console.error(err); $("camStart").disabled = false; $("camBox").hidden = true; toast("Could not start the scanner (" + (err && err.message || "unknown") + "). Reload the page and try again."); }
+  }
+  async function startCamInner(mode) {
     if (!window.isSecureContext) return toast("The camera needs a secure (https) page. Open the app from its https address.");
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return toast("Camera is not available in this browser. Try Safari on iPhone or Chrome on Android.");
     try { const st = navigator.permissions && (await navigator.permissions.query({ name: "camera" })); if (st && st.state === "denied") return toast("Camera is blocked for this site. Tap the lock or AA icon in the address bar, set Camera to Allow, then reload."); } catch {}
@@ -431,6 +434,11 @@
       return toast(n === "NotAllowedError" ? "Camera permission was not allowed. Tap Allow when the browser asks. To keep it on, set Camera to Allow for this site in your browser settings." :
         n === "NotFoundError" || n === "OverconstrainedError" ? "No camera was found on this device." :
         n === "NotReadableError" ? "The camera is being used by another app. Close it and try again." : "Could not start the camera. Reload the page and try again.");
+    }
+    if (mode !== "barcode") {                        // the camera opens at once; the reader may still be downloading
+      hud("Loading reader…", "search");
+      for (let k = 0; k < 60 && !window.Tesseract; k++) await sleep(250);
+      if (!window.Tesseract) { cam.run = false; stopCam(); return toast("The text reader did not load. Check your connection, then tap Start again. Barcode scanning still works."); }
     }
     const v = $("camVideo"); v.srcObject = cam.stream; v.muted = true; v.setAttribute("playsinline", "");
     await Promise.race([new Promise(r => (v.onloadedmetadata = r)), sleep(5000)]);     // never hang here if the event is late
