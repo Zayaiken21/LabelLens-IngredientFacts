@@ -3,9 +3,9 @@
    Built to stay inside the service's limits: cache, queue with spacing, timeouts, cooldown after errors. */
 (() => {
   const OFF = "https://world.openfoodfacts.org";
-  const GAP = { product: 6500, search: 9000, fdc: 1500 };        // service allows ~15 product reads/min and 10 searches/min per IP
+  const GAP = { product: 6500, search: 3000, fdc: 400 };        // service allows ~15 product reads/min and 10 searches/min per IP
   const TTL = 14 * 864e5, MAXC = 40;
-  const mem = { last: { product: 0, search: 0, fdc: 0 }, cool: 0, coolF: 0, inflight: new Map(), chain: Promise.resolve() };
+  const mem = { last: { product: 0, search: 0, fdc: 0 }, cool: 0, coolF: 0, inflight: new Map(), chains: {} };
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   /* ---------- cache ---------- */
@@ -18,12 +18,12 @@
   async function polite(kind, url, key, tx) {
     const hit = cget(key); if (hit) return hit.v;
     if (mem.inflight.has(key)) return mem.inflight.get(key);
-    const run = mem.chain.then(async () => {
+    const run = (mem.chains[kind] || Promise.resolve()).then(async () => {
       const ck = kind === "fdc" ? "coolF" : "cool";
       if (Date.now() < mem[ck]) throw Object.assign(new Error("cooldown"), { cool: Math.ceil((mem[ck] - Date.now()) / 1000), fdc: kind === "fdc" });
       const wait = mem.last[kind] + GAP[kind] - Date.now(); if (wait > 0) await sleep(wait);
       mem.last[kind] = Date.now();
-      const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 9000);
+      const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), kind === "search" ? 6000 : 9000);
       try {
         const res = await fetch(url, { signal: ctl.signal, headers: { Accept: "application/json" } });
         if (res.status === 404) { cput(key, null); return null; }
@@ -34,7 +34,7 @@
       } catch (e) { if (e instanceof TypeError) e.detail = "the browser could not connect (offline, or the service blocked the request)"; if (e.name === "AbortError") { mem[ck] = Date.now() + 20000; throw Object.assign(new Error("timeout"), { busy: true }); } throw e; }
       finally { clearTimeout(to); }
     });
-    mem.chain = run.catch(() => {});
+    mem.chains[kind] = run.catch(() => {});
     mem.inflight.set(key, run); run.finally(() => mem.inflight.delete(key)).catch(() => {});
     return run;
   }

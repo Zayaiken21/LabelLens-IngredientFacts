@@ -222,17 +222,22 @@
       box.appendChild(wrap);
     });
   }
-  $("findNameBtn").addEventListener("click", () => guard($("findNameBtn"), async () => {
+  let searchSeq = 0;
+  $("findNameBtn").addEventListener("click", async () => {        // never locked: a new search simply replaces the one still running
+    const seq = ++searchSeq, stale = () => seq !== searchSeq;
+    try {
     findMsg("Searching… (name search is rate limited, so it can take a few seconds)");
     $("findList").innerHTML = "";
     let list; try { list = await LLOnline.search($("findName").value); }
     catch (e) { if (e && (e.cool || e.busy || e.keyBad || e.quota || e.message === "short")) throw e; quotaTxt(); throw Object.assign(new Error("search"), { search: true, why: e && (e.why || e.detail) }); }
+    if (stale()) return;
     const scan = $("ingText").value.trim();
     list.forEach(p => { const c = scan && p.ing ? LLOnline.compare(scan, p.ing) : null; p._score = c ? c.score : -1; });
     if (scan) list.sort((a, b) => (a._tier - b._tier) || (b._score - a._score));
     findMsg(list.length ? `${list.length} results. Exact names come first, with the sizes and packages they come in. Tap any one, then tap another to compare.` : "Nothing matched. Try one or two key words, or scan the barcode.");
-    renderPicks(list, scan); quotaTxt();
-  }));
+    if (stale()) return; renderPicks(list, scan); quotaTxt();
+    } catch (e) { if (!stale()) { findMsg(online_err(e)); quotaTxt(); } }
+  });
   quotaTxt(); setInterval(quotaTxt, 60000);
   $("findName").addEventListener("keydown", e => { if (e.key === "Enter") $("findNameBtn").click(); });
 
